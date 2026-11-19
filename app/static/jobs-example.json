@@ -1,0 +1,10 @@
+{
+  "jobs": [{
+    "title": "示例 AI 应用开发实习生",
+    "company": "示例公司",
+    "city": "上海",
+    "description": "参与 Python 应用开发及检索效果测试。",
+    "url": "https://example.com/jobs/sample",
+    "source": "mock_example"
+  }]
+}

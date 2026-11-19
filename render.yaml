@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: echo-careers
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PUBLIC_MODE
+        value: "true"
+      - key: MODEL_MODE
+        value: mock
+      - key: APP_DATA_DIR
+        value: /app/data
+      - key: PUBLIC_SESSION_SECRET
+        generateValue: true
+      - key: MODEL_TIMEOUT
+        value: "12"

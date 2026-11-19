@@ -1,0 +1,61 @@
+# id|family|zh|en|aliases|evidence phrases
+agent|软件与数据|Agent 开发|Agent Developer|Agent 工程师,智能体开发|智能体,工具调用,agent workflow,agent开发,工单 agent,agent tooling,agent workflow
+llm|软件与数据|大模型应用|LLM Application Developer|大模型应用开发,AI 应用开发|向量检索,文档问答,模型 api,rag,rag workflow,retrieval augmented,大模型应用,引用溯源
+backend|软件与数据|Python 后端|Python Backend Developer|后端开发工程师,后端工程师,软件工程师,Backend Developer|fastapi,flask,开发接口,后端项目,rest api,server-side,backend development,后端服务,booking API,server side,developed apis
+frontend|软件与数据|前端开发工程师|Frontend Developer|Web前端工程师,html开发工程师,前端工程师|react components,vue 页面,前端开发,css 布局,frontend,组件开发,响应式页面,前端组件
+qa|软件与数据|软件测试工程师|Software QA Engineer|测试工程师,游戏测评工程师,QA Automation Engineer,Software QA Automation Engineer|测试用例,缺陷跟踪,回归测试,test cases,bug reports,software testing,test automation,automated tests,defect reports
+data|软件与数据|数据分析师|Data Analyst|数据分析主办,网站数据分析员|数据清洗,回归分析,指标口径,data analysis,数据分析,业务看板,分析仪表盘,business dashboard,reporting dashboard,analytics dashboard,统计建模,数据可视化
+bi|软件与数据|商业分析师|Business Analyst|业务分析师,Commercial Analyst,Retail Operations Analyst|业务需求,需求访谈,流程梳理,业务指标,business requirements,business analysis,流程图,compared planned,store performance,operational metrics,recurring gaps
+vision|软件与数据|计算机视觉工程师|Computer Vision Engineer|计算机视觉|目标检测,图像分割,opencv,yolo,object detection
+nlp|软件与数据|自然语言处理工程师|NLP Engineer|NLP 算法|文本分类,自然语言处理,分词,text classification,命名实体识别
+product|软件与数据|产品专员|Product Associate|产品开发工程师|产品需求,产品原型,需求文档,产品迭代,prd,product roadmap
+linux|基础设施|Linux 运维工程师|Linux Systems Engineer|系统运维工程师,系统管理员,IT工程师,运维工程师|linux,服务器巡检,故障排查,系统监控,linux administration,system administration,linux服务器,系统运维,操作系统故障,服务器故障,系统补丁,linux servers
+cloud|基础设施|云平台运维工程师|Cloud Operations Engineer|云运维工程师,云平台工程师|云平台,云资源,云上部署,云主机,cloud infrastructure,cloud operations,aws deployment,阿里云
+containers|基础设施|容器运维工程师|Kubernetes Operations Engineer|Kubernetes 运维工程师,容器平台工程师|kubernetes,k8s,集群维护,容器编排,helm,container orchestration,集群节点,节点升级,容器平台,节点维护,cluster node,kubeadm,kubelet
+devops|基础设施|自动化运维工程师|DevOps Engineer|运维自动化工程师,DevOps|ansible,自动化运维,批量部署,ci/cd,cicd,批量巡检,deployment automation,terraform,发布流水线,自动化发布,持续集成,持续交付,自动化部署,构建流水线,构建cicd,cicd发布,cicd流程,jenkins部署,jenkins发布,jenkins deployment pipelines,automated releases
+helpdesk|基础设施|IT 服务台专员|IT Service Desk Analyst|技术支持工程师,助理技术支持工程师,IT运维支持,IT Service Desk,Technical Customer Support|服务台,工单分派,桌面支持,账户权限,help desk,service desk,troubleshooting,技术支持,logged pos failures,triaged,incident tickets,reconnect equipment,故障工单
+network|基础设施|网络工程师|Network Engineer|助理网络工程师|网络设备,网络故障,交换机,路由器,network configuration,网络监控
+accounting|财务金融|会计|Accountant|会计员,财务会计,主管会计,Financial Accountant|对账,记账,会计凭证,总账,月结,财务报表,bank reconciliation,bookkeeping,accounting,monthly close,general ledger
+payables|财务金融|应付会计|Accounts Payable Specialist|应付账款专员,会计助理,应付会计助理|发票审核,付款凭证,应付账款,invoice processing,accounts payable,自动对账,采购凭证,核对发票,报销单
+cashier|财务金融|出纳|Cashier|财务出纳|银行流水,现金盘点,付款审批,现金收付,出纳,银行结算
+credit|财务金融|信贷分析专员|Credit Analyst|信用风险分析师,信贷专员,商业信贷分析师,商业信贷分析员,贷后风险分析师|授信,尽调,信贷审查,信用评估,credit risk,credit analysis,贷后预警,授信材料,信审委员会,额度变更
+investment|财务金融|投资分析助理|Investment Analyst|投资分析助理员|投资分析,估值,投资组合,financial modelling,investment analysis
+purchase|供应链物流|采购专员|Procurement Specialist|采购员,采购助理,采购跟单|询价,比价,供应商催单,采购订单,purchase orders,procurement,supplier quotation,采购跟单,供应商交货,承运商,采购业务,supplier deliveries
+supply|供应链物流|供应链专员|Supply Chain Coordinator|供应链协调员,供应链计划,供应链培训生,Supply Chain Trainee|供应链,库存周转,需求预测,供应商交付,supply chain,inventory planning,supply requests
+warehouse|供应链物流|仓储运营专员|Warehouse Coordinator|仓储员,物流仓储员,仓管员,仓储运营助理,Warehouse Shift Coordinator,Goods-in Assistant|库存盘点,仓库,出入库,仓储,warehouse,inventory count,货位,循环盘点,库位,stock count
+logistics|供应链物流|物流运营专员|Logistics Coordinator|物流专员,物流调度,运输调度,Aviation Logistics Coordinator|配送,运输调度,物流,运单,dispatch,logistics,末端配送,equipment dispatch,运输安排
+trade|供应链物流|外贸跟单员|Export Coordinator|外贸专员,外贸业务员|外贸,报关,进出口,贸易单证,freight forwarding,export documentation
+nursing|医疗健康|护士|Registered Nurse|责任护士,中级护理师,临床护理,Nurse Graduate Program,Clinical Support Assistant|护理评估,临床护理,给药,生命体征,patient care,nursing,交接班,护理记录,patient handover,patient handovers,inpatient care,clinical placement,生命体征记录
+lab|医疗健康|医学检验技师|Medical Laboratory Technician|医学检验员,医学检验助理,医学实验室毕业生项目|医学检验,标本处理,生化检验,检验质量控制,specimen,laboratory testing,临床检验,临床化学,样本标识,实验室质控,血液学
+medadmin|医疗健康|医疗行政专员|Healthcare Administrator|门诊行政,医院行政,Medical Receptionist,Practice Administration Coordinator,Patient Services Officer|病历归档,门诊排班,挂号预约,医疗行政,medical records,clinic reception,医疗记录,clinic relief,appointment bookings,patient scheduling,patient information,候诊登记
+pharma|医疗健康|药师|Pharmacist|中药师,用药咨询药师|处方审核,用药咨询,药品调剂,药房,pharmacy,dispensing medication
+teacher|教育与人力|教师|Teacher|高中教师,中学教师,小学教师,班主任,Primary Teacher,Secondary English Teacher|备课,课堂教学,课程教案,批改作业,教学设计,lesson planning,classroom teaching,教学,planned small-group,designs year,classroom assessment,批阅作业,授课
+assistant|教育与人力|教学助理|Teaching Assistant|培训机构助教老师,助教,OSHC Educator|课堂辅导,教学辅助,教学助理,小组辅导,teaching assistant,tutoring,学生辅导,after-school care,outside school hours care
+learning|教育与人力|培训与发展专员|Learning and Development Specialist|培训专员,培训讲师,企业培训,Learning and Development Coordinator,Instructional Designer,Training Specialist|培训需求,培训课程,课程开发,培训评估,learning and development,training materials,学习项目,internal onboarding,training programme,learning objectives,instructional design,情景练习
+payroll|教育与人力|薪资专员|Payroll Specialist|工厂薪资核算员,薪酬专员,Australian Payroll Officer,Payroll Operations Coordinator|薪资核算,工资表,工资核算,社保缴纳,payroll,timesheets,考勤,薪资,pay runs,pay-cycle,superannuation
+recruiter|教育与人力|招聘专员|Recruitment Coordinator|人力资源专员,人事专员|人才招聘,筛选简历,面试安排,入职手续,recruitment,candidate screening
+mechanical|制造与工程|机械工程师|Mechanical Engineer|设备工程师,机械员|机械设计,设备维护,工程制图,solidworks,mechanical design,工装夹具
+process|制造与工程|工艺工程师|Process Engineer|制造工程师,PIE工程师|工艺流程,产线改进,节拍,良率,工序优化,process improvement,生产流程,制造过程
+quality|制造与工程|质量工程师|Quality Engineer|品质工程师,质量检验员,质量控制工程师|质量检验,质量控制,抽样检验,不良分析,quality control,quality assurance,8d
+electric|制造与工程|电气技工|Electrical Technician|电工,仪器仪表工程师,Commercial Electrician,Industrial Maintenance Electrician|电气维修,电气设备,配电柜,电路故障,electrical maintenance,plc,电气安装,lighting circuits,licensed electrician,isolated faulty equipment
+construction|制造与工程|工程助理|Construction Project Assistant|工程资料员,施工员,工程测量员|施工图,工程量,施工现场,工程验收,竣工资料,construction site,工程测量
+environment|制造与工程|环境监测专员|Environmental Technician|环境科学,环保专员,Environmental Monitoring Assistant,Environmental Consultant|环境监测,环境采样,水质,排放监测,environmental sampling,水样,环境影响,creek sampling,field sampling,sample IDs,site coordinates
+sales|营销与客户|销售专员|Sales Representative|销售代表,业务专员,客户经理|销售指标,销售线索,客户开发,电话联系客户,商务谈判,sales targets,prospecting,客户跟进
+support|营销与客户|客户服务专员|Customer Support Specialist|客户服务员,客服内勤,座席代表,Customer Service Associate|客户工单,售后服务,处理投诉,客户咨询,customer support,customer service,售后,refund queries,客户反馈
+marketing|营销与客户|市场营销专员|Marketing Coordinator|营销策划主办,营销业务主办|营销活动,市场推广,活动投放,线索转化,marketing campaign,campaign reporting,投放
+events|营销与客户|活动运营专员|Event Coordinator|会展执行,活动策划,活动执行,会务协调,营销活动专员|活动执行,场地协调,会展,供应商统筹,event logistics,event planning,现场活动,活动报名,参展商物料,布展,场地,供应商排期
+design|设计与电商|视觉设计师|Visual Designer|平面设计师,美工,UI设计师|视觉设计,品牌海报,版式,设计规范,figma,品牌视觉,graphic design,photoshop
+photo|设计与电商|摄影师|Commercial Photographer|商业摄影师,短视频拍摄师,产品摄影师|商业拍摄,商品拍摄,布光,修图,摄影,product photography,photoshoot,人物肖像,静态图片,精修,拍摄清单
+video|设计与电商|视频剪辑师|Video Editor|短视频剪辑师,短视频编导,Assistant Video Editor,Social Video Editor|视频剪辑,分镜,后期制作,字幕,video editing,premiere pro,成片,subtitles,shooting days,cut a,cut footage,post-production
+content|设计与电商|内容运营专员|Content Coordinator|新媒体运营,文案策划专员,传媒运营|内容排期,账号运营,内容创作,稿件编辑,content calendar,内容运营,社媒
+commerce|设计与电商|电商运营专员|E-commerce Operations Specialist|电商运营主管,电商专员|电商平台,商品上架,店铺运营,转化率,电商,e-commerce merchandising,商品详情,大促
+retail|零售服务|零售运营专员|Retail Operations Associate|零售店员,门店运营,Retail Sales Advisor,Visual Merchandising Assistant|门店运营,收银,商品陈列,补货,门店销售,retail operations,店铺陈列,retail team lead,promotional displays,floor priorities,balanced the register
+restaurant|零售服务|餐饮运营专员|Restaurant Operations Associate|餐饮前厅经理,中餐厅服务员,餐饮主管|餐厅运营,餐饮,餐桌服务,前厅排班,food service,restaurant operations,食品安全
+hotel|零售服务|酒店前台|Hotel Front Desk Agent|酒店前厅部经理,酒店大堂经理,前台接待|酒店前台,客房预订,入住登记,退房,hotel reservations,front desk,宾客接待
+community|公共与社会服务|社区服务专员|Community Services Coordinator|社区工作者,社会服务专员,Family Support Worker,Social Worker|社区服务,社区走访,社区活动,居民需求,community outreach,社会服务,intake interviews,service eligibility,connects clients,referrals
+policy|公共与社会服务|政策与项目评估专员|Policy and Evaluation Analyst|公共政策分析,项目评估专员,Policy Research Assistant,Program Evaluation Assistant,Government Project Officer|政策分析,项目评估,政策调研,指标评估,policy analysis,program evaluation,社会影响,policy intern,consultation notes,政策资料,programme evaluation
+nonprofit|公共与社会服务|非营利项目专员|Nonprofit Program Coordinator|公益项目专员,项目协调员,非营利项目助理,国际项目协调助理,社区外联助理|公益项目,非营利,志愿者管理,跨国项目,nonprofit,grant reporting,项目执行,公共机构的项目支持,跨文化活动,社区协会
+sports|公共与社会服务|体育项目运营专员|Sports Program Coordinator|体育公园管理人员,体育活动运营|赛事执行,赛事推广,体育推广,体育活动,sports promotion,sports events
+admin|综合运营|行政专员|Administrative Coordinator|综合行政主管,行政助理,办公文员|公文流转,会议纪要,行政事务,档案管理,office administration,administrative support
+audit|财务金融|审计助理|Audit Assistant|审计实习生,审计专员|审计实习,函证回函,抽样清单,审计底稿,audit sampling,audit working papers
+production|设计与电商|影视制作助理|Production Assistant|片场助理,影视助理|shooting days,production crew,拍摄排期,场记,布光和收音

@@ -1,0 +1,452 @@
+[
+  {
+    "record_id": "demo-001",
+    "source": "synthetic",
+    "source_id": "SYN-001",
+    "title": "Agent 开发实习生",
+    "company": "演示企业01（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "250–350元/天",
+    "url": "https://example.invalid/jobs/1",
+    "jd": "负责工单智能体工具调用与状态管理。用 Python、FastAPI 开发服务；要求有 Agent 工作流项目经验。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-002",
+    "source": "synthetic",
+    "source_id": "SYN-002",
+    "title": "RAG 应用开发实习生",
+    "company": "演示企业02（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "220–300元/天",
+    "url": "https://example.invalid/jobs/2",
+    "jd": "负责企业文档切分、向量召回与答案溯源。要求 Python、RAG；FastAPI 经验加分。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-003",
+    "source": "synthetic",
+    "source_id": "SYN-003",
+    "title": "AI 应用后端开发实习生",
+    "company": "演示企业03（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/3",
+    "jd": "用 Python、FastAPI 接入模型 API，编写请求校验和日志。由资深工程师指导。要求可展示后端项目。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-004",
+    "source": "synthetic",
+    "source_id": "SYN-004",
+    "title": "大模型工作流开发实习生",
+    "company": "演示企业04（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "200–320元/天",
+    "url": "https://example.invalid/jobs/4",
+    "jd": "用 Python 编排资料抽取、结构化输出与异常回退；要求有模型工具调用或工作流实践。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-005",
+    "source": "synthetic",
+    "source_id": "SYN-005",
+    "title": "研发知识库实习生",
+    "company": "演示企业05（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "180–260元/天",
+    "url": "https://example.invalid/jobs/5",
+    "jd": "负责检索模块和引用定位的实现，要求 Python、向量检索；了解 Docker 优先。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-006",
+    "source": "synthetic",
+    "source_id": "SYN-006",
+    "title": "Python 后端实习生",
+    "company": "演示企业06（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "200–300元/天",
+    "url": "https://example.invalid/jobs/6",
+    "jd": "开发业务 REST API，要求 FastAPI 或 Flask、SQL。协助把大模型回复接入业务后台。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-007",
+    "source": "synthetic",
+    "source_id": "SYN-007",
+    "title": "文档理解应用实习生",
+    "company": "演示企业07（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/7",
+    "jd": "开发 PDF 解析与字段抽取小工具。要求 Python、JSON 校验。需要学习 OCR 清洗和文档评测。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-008",
+    "source": "synthetic",
+    "source_id": "SYN-008",
+    "title": "模型应用测试开发实习生",
+    "company": "演示企业08（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "180–280元/天",
+    "url": "https://example.invalid/jobs/8",
+    "jd": "编写 Python 测试脚本，维护 LLM 回归用例，统计正确率和延迟；评测平台开发经验加分。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-009",
+    "source": "synthetic",
+    "source_id": "SYN-009",
+    "title": "智能客服 API 实习生",
+    "company": "演示企业09（虚构）",
+    "city": "杭州",
+    "employment_type": "实习",
+    "salary_raw": "230–300元/天",
+    "url": "https://example.invalid/jobs/9",
+    "jd": "用 Python 和 FastAPI 封装知识库问答并加入人工接管。杭州线下，可实习三个月。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-010",
+    "source": "synthetic",
+    "source_id": "SYN-010",
+    "title": "AI 产品规划实习生",
+    "company": "演示企业10（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "160–220元/天",
+    "url": "https://example.invalid/jobs/10",
+    "jd": "负责访谈、竞品分析与 PRD，评估 AI 功能效果。不承担服务端研发。要求原型和需求文档能力。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-011",
+    "source": "synthetic",
+    "source_id": "SYN-011",
+    "title": "NLP 算法实习生",
+    "company": "演示企业11（虚构）",
+    "city": "深圳",
+    "employment_type": "实习",
+    "salary_raw": "240–320元/天",
+    "url": "https://example.invalid/jobs/11",
+    "jd": "用 PyTorch 训练文本分类与实体抽取模型。要求熟悉 Transformer，能编写实验脚本；需深圳到岗。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-012",
+    "source": "synthetic",
+    "source_id": "SYN-012",
+    "title": "多模态检索实习生",
+    "company": "演示企业12（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "250–400元/天",
+    "url": "https://example.invalid/jobs/12",
+    "jd": "实现图文向量检索并评估召回，要求 Python 和 CLIP 实验；熟悉 RAG 可加分。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-013",
+    "source": "synthetic",
+    "source_id": "SYN-013",
+    "title": "MLOps 实习生",
+    "company": "演示企业13（虚构）",
+    "city": "北京",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/13",
+    "jd": "维护训练任务部署与指标监控。要求 Kubernetes 部署经验和 Python，Docker 加分。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-014",
+    "source": "synthetic",
+    "source_id": "SYN-014",
+    "title": "计算机视觉检测实习生",
+    "company": "演示企业14（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "180–280元/天",
+    "url": "https://example.invalid/jobs/14",
+    "jd": "负责 YOLO 检测结果分析和数据增强；需要 Python、OpenCV，岗位方向为工业视觉。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-015",
+    "source": "synthetic",
+    "source_id": "SYN-015",
+    "title": "AI 质量评估实习生",
+    "company": "演示企业15（虚构）",
+    "city": "成都",
+    "employment_type": "实习",
+    "salary_raw": "170–230元/天",
+    "url": "https://example.invalid/jobs/15",
+    "jd": "设计多轮对话评测标准、抽查标注并汇总报告；Python 脚本能力加分。成都线下。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-016",
+    "source": "synthetic",
+    "source_id": "SYN-016",
+    "title": "AI 算力推理实习生",
+    "company": "演示企业16（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "250–350元/天",
+    "url": "https://example.invalid/jobs/16",
+    "jd": "优化 GPU kernel 和推理调度。要求 C++、CUDA 与性能剖析。Python 主要用于结果汇总。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-017",
+    "source": "synthetic",
+    "source_id": "SYN-017",
+    "title": "嵌入式语音 AI 实习生",
+    "company": "演示企业17（虚构）",
+    "city": "苏州",
+    "employment_type": "实习",
+    "salary_raw": "180–260元/天",
+    "url": "https://example.invalid/jobs/17",
+    "jd": "将唤醒模型部署到嵌入式设备，要求 C、RTOS、串口调试与定点量化。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-018",
+    "source": "synthetic",
+    "source_id": "SYN-018",
+    "title": "视觉设计实习生（AI 创作）",
+    "company": "演示企业18（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/18",
+    "jd": "制作活动KV、品牌海报和社媒素材。要求使用 Photoshop 和 Figma；生成式工具仅作辅助。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-019",
+    "source": "synthetic",
+    "source_id": "SYN-019",
+    "title": "AI 应用开发实习生（增长组）",
+    "company": "演示企业19（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "150元/天+提成",
+    "url": "https://example.invalid/jobs/19",
+    "jd": "每日电话联系培训意向客户、安排试听、跟进付费和完成销售指标。无软件开发职责。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-020",
+    "source": "synthetic",
+    "source_id": "SYN-020",
+    "title": "Agent 运营工程实习生",
+    "company": "演示企业20（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "140–190元/天",
+    "url": "https://example.invalid/jobs/20",
+    "jd": "按照脚本审核客服对话，并在表格中打标签。要求熟练 Excel，主要产出是日审量，不需要编程。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-021",
+    "source": "synthetic",
+    "source_id": "SYN-021",
+    "title": "Python AI 应用工程师",
+    "company": "演示企业21（虚构）",
+    "city": "上海",
+    "employment_type": "全职",
+    "salary_raw": "22–32K/月",
+    "url": "https://example.invalid/jobs/21",
+    "jd": "负责 Python 后端、RAG、Agent 研发。明确仅招全职，需两年以上正式研发经验，不接受实习。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-022",
+    "source": "synthetic",
+    "source_id": "SYN-022",
+    "title": "Agent 技术负责人",
+    "company": "演示企业22（虚构）",
+    "city": "深圳",
+    "employment_type": "全职",
+    "salary_raw": "35–50K/月",
+    "url": "https://example.invalid/jobs/22",
+    "jd": "负责智能体架构规划和团队管理。仅全职，要求五年正式研发经验及两年带队经历。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-023",
+    "source": "synthetic",
+    "source_id": "SYN-023",
+    "title": "Web 前端实习生",
+    "company": "演示企业23（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "180–240元/天",
+    "url": "https://example.invalid/jobs/23",
+    "jd": "负责 Vue 页面和移动端样式实现。要求 TypeScript、CSS。项目与模型开发无关。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-024",
+    "source": "synthetic",
+    "source_id": "SYN-024",
+    "title": "财务助理实习生",
+    "company": "演示企业24（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/24",
+    "jd": "录入凭证、整理发票和按月核对报销。要求会计基础及财务系统操作，工作无技术开发内容。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-025",
+    "source": "synthetic",
+    "source_id": "SYN-025",
+    "title": "智能问答编排实习生",
+    "company": "演示企业25（虚构）",
+    "city": "北京",
+    "employment_type": "实习",
+    "salary_raw": "220–320元/天",
+    "url": "https://example.invalid/jobs/25",
+    "jd": "开发 Python 编排服务、工具调用注册和失败重试。每周四天，要求北京线下连做至少六个月。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-026",
+    "source": "synthetic",
+    "source_id": "SYN-026",
+    "title": "AI 平台助理实习生",
+    "company": "演示企业26（虚构）",
+    "city": null,
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/26",
+    "jd": "协助脚本开发、整理问题清单。具体职责、技能要求、办公地点和实习期限面谈。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-027",
+    "source": "synthetic",
+    "source_id": "SYN-027",
+    "title": "模型应用接口实习生",
+    "company": "演示企业27（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "240–340元/天",
+    "url": "https://example.invalid/jobs/27",
+    "jd": "负责 Python/FastAPI 接口、模型响应验证和 Docker 部署，要求具备 REST API 与模型调用实践。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  },
+  {
+    "record_id": "demo-028",
+    "source": "synthetic",
+    "source_id": "SYN-001",
+    "title": "Agent 开发实习生",
+    "company": "演示企业01（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "250–350元/天",
+    "url": "https://example.invalid/jobs/1",
+    "jd": "负责工单智能体工具调用与状态管理。用 Python、FastAPI 开发服务；要求有 Agent 工作流项目经验。",
+    "search_terms": [
+      "大模型应用实习"
+    ]
+  },
+  {
+    "record_id": "demo-029",
+    "source": "synthetic",
+    "source_id": null,
+    "title": "AI 应用后端开发实习生",
+    "company": "演示企业03（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": null,
+    "url": "https://example.invalid/jobs/3?utm_source=demo",
+    "jd": "用 Python、FastAPI 接入模型 API，编写请求校验和日志。由资深工程师指导。要求可展示后端项目。",
+    "search_terms": [
+      "Agent 开发实习"
+    ]
+  },
+  {
+    "record_id": "demo-030",
+    "source": "synthetic",
+    "source_id": "SYN-020",
+    "title": "Agent 运营工程实习生",
+    "company": "演示企业20（虚构）",
+    "city": "上海",
+    "employment_type": "实习",
+    "salary_raw": "140–190元/天",
+    "url": "https://example.invalid/jobs/20",
+    "jd": "按照脚本审核客服对话，并在表格中打标签。要求熟练 Excel，主要产出是日审量，不需要编程。",
+    "search_terms": [
+      "Python 后端实习"
+    ]
+  }
+]

@@ -1,0 +1,60 @@
+{
+  "format": "JSONL",
+  "timestamp": "UTC ISO8601",
+  "request_id": "服务生成或校验过的请求标识，贯穿检索与模型调用",
+  "required_fields": [
+    "timestamp",
+    "level",
+    "event",
+    "request_id",
+    "stage",
+    "duration_ms",
+    "status"
+  ],
+  "optional_fields": [
+    "job_id",
+    "resume_id",
+    "model",
+    "prompt_version",
+    "prompt_sha256",
+    "retrieval_count",
+    "token_usage",
+    "error_code",
+    "retry_count"
+  ],
+  "levels": {
+    "INFO": "开始/完成与必要性能指标",
+    "WARNING": "重试、低相关检索、需要本人确认、模型格式修复",
+    "ERROR": "处理失败、依赖不可用、配置错误"
+  },
+  "never_log": [
+    "API密钥",
+    "Authorization头",
+    "Cookie",
+    "手机号",
+    "邮箱",
+    "微信",
+    "完整简历",
+    "招聘聊天全文",
+    "完整JD",
+    "完整Prompt",
+    "Few-shot正文",
+    "原始模型回复",
+    "原始异常对象含敏感正文"
+  ],
+  "default_log_raw_content": false,
+  "redaction": "按字段白名单记录，异常与上游URL也需脱敏；DEBUG不得绕过",
+  "retention_days": 14,
+  "retention_status": "建议默认，可配置；过期删除由部署任务落实",
+  "model_usage": "仅记录API真实返回的usage，未返回时为null；不估算成真实账单",
+  "events": [
+    "request_started",
+    "retrieval_completed",
+    "model_call_completed",
+    "model_output_invalid",
+    "retry_scheduled",
+    "handoff_required",
+    "request_completed",
+    "request_failed"
+  ]
+}

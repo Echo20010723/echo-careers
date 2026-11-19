@@ -1,0 +1,27 @@
+.venv/
+.env
+**/.env
+**/__pycache__/
+.pytest_cache/
+data/
+logs/
+playwright/.auth/
+*.sqlite*
+
+# Local personal materials
+/knowledge_base/
+/.handoff/
+
+/test_data/
+/tests/test_rag_api.py
+
+/Career_Workbench_Resume_JD_Benchmark/
+/browser_extension/
+/browser_extension.zip
+.env.*
+!.env.example
+*.log
+*.sqlite*
+*.db
+*.db-*
+/boss_connector/identity.json

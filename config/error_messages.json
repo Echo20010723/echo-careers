@@ -1,0 +1,77 @@
+{
+  "format": {
+    "error": {
+      "code": "ERROR_CODE",
+      "message": "用户可读文案",
+      "request_id": "服务生成的请求ID"
+    }
+  },
+  "messages": {
+    "INVALID_INPUT": {
+      "http_status": 422,
+      "message": "输入内容不完整或格式不正确，请检查后重试。",
+      "retryable": false
+    },
+    "INPUT_TOO_LARGE": {
+      "http_status": 413,
+      "message": "输入内容过长，请缩减后重试。",
+      "retryable": false
+    },
+    "INVALID_WEIGHTS": {
+      "http_status": 422,
+      "message": "匹配权重配置无效，请检查配置。",
+      "retryable": false
+    },
+    "RESUME_NOT_FOUND": {
+      "http_status": 404,
+      "message": "未找到指定简历，请先导入简历。",
+      "retryable": false
+    },
+    "MODEL_OUTPUT_INVALID": {
+      "http_status": 502,
+      "message": "模型返回格式异常，请稍后重试。",
+      "retryable": true
+    },
+    "MODEL_TIMEOUT": {
+      "http_status": 504,
+      "message": "模型响应超时，请稍后重试。",
+      "retryable": true
+    },
+    "MODEL_RATE_LIMITED": {
+      "http_status": 503,
+      "message": "模型服务暂时繁忙，请稍后再试。",
+      "retryable": true
+    },
+    "MODEL_UNAVAILABLE": {
+      "http_status": 503,
+      "message": "模型服务暂时不可用，请稍后重试。",
+      "retryable": true
+    },
+    "SERVICE_NOT_CONFIGURED": {
+      "http_status": 503,
+      "message": "模型服务尚未配置完成，请联系服务维护者。",
+      "retryable": false
+    },
+    "RETRIEVAL_UNAVAILABLE": {
+      "http_status": 503,
+      "message": "知识库暂时不可用，请稍后重试。",
+      "retryable": true
+    },
+    "INTERNAL_ERROR": {
+      "http_status": 500,
+      "message": "服务处理失败，请稍后重试并提供请求编号。",
+      "retryable": false
+    }
+  },
+  "normal_states": {
+    "NO_RELEVANT_EXAMPLES": "暂无相关历史示例，将仅依据当前简历与确认资料起草。",
+    "NEEDS_CONFIRMATION": "相关信息尚未确认，请本人补充后再答复。",
+    "HANDOFF_REQUIRED": "已到面试或其他本人接手环节。"
+  },
+  "rules": [
+    "错误HTTP状态不得包装为200",
+    "不把API密钥、原始请求、完整Prompt或堆栈写进用户文案",
+    "缺少事实不是系统故障，通常返回200并标记待确认",
+    "模型重试和调用预算由应用限制"
+  ]
+}

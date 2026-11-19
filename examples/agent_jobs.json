@@ -1,0 +1,165 @@
+{
+  "jobs": {
+    "phd-a": {
+      "source": "synthetic",
+      "source_id": "phd-a",
+      "title": "Agent Developer · Doctoral Research",
+      "company": "虚构招聘团队",
+      "jd": "Develop Agent tooling with Python and FastAPI.\nCandidates must be enrolled in a PhD program.",
+      "jd_summary": "Develop Agent tooling with Python and FastAPI.",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/phd-a",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "skip"
+    },
+    "phd-b": {
+      "source": "synthetic",
+      "source_id": "phd-b",
+      "title": "Agent Developer · Research Lab",
+      "company": "虚构招聘团队",
+      "jd": "Build RAG workflows and implement Python APIs.\nA doctorate is required.",
+      "jd_summary": "Build RAG workflows and implement Python APIs.",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/phd-b",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "skip"
+    },
+    "phd-c": {
+      "source": "synthetic",
+      "source_id": "phd-c",
+      "title": "Agent Developer · Research Fellowship",
+      "company": "虚构招聘团队",
+      "jd": "Develop an Agent workflow with Python and FastAPI.\nOnly doctoral candidates may apply.",
+      "jd_summary": "Develop an Agent workflow with Python and FastAPI.",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/phd-c",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "skip"
+    },
+    "sales": {
+      "source": "synthetic",
+      "source_id": "sales",
+      "title": "Agent Developer · Sales",
+      "company": "虚构招聘团队",
+      "jd": "完成销售指标、电话联系客户，无软件开发职责。",
+      "jd_summary": "完成销售指标、电话联系客户，无软件开发职责。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/sales",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "skip"
+    },
+    "api": {
+      "source": "synthetic",
+      "source_id": "api",
+      "title": "AI Backend Intern",
+      "company": "虚构招聘团队",
+      "jd": "用 Python、FastAPI 开发接口和请求校验。\n必须能用 Python 开发接口。",
+      "jd_summary": "用 Python、FastAPI 开发接口和请求校验。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/api",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "worth_applying"
+    },
+    "rag": {
+      "source": "synthetic",
+      "source_id": "rag",
+      "title": "RAG Engineering Intern",
+      "company": "虚构招聘团队",
+      "jd": "实现 RAG 和向量检索，校验引用来源。\n必须具备 RAG 项目经验。",
+      "jd_summary": "实现 RAG 和向量检索，校验引用来源。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/rag",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "worth_applying"
+    },
+    "agent": {
+      "source": "synthetic",
+      "source_id": "agent",
+      "title": "Agent Integration Intern",
+      "company": "虚构招聘团队",
+      "jd": "开发 Agent 工具调用和工作流。\n要求具备 Agent 项目经验。",
+      "jd_summary": "开发 Agent 工具调用和工作流。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/agent",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "worth_applying"
+    },
+    "python": {
+      "source": "synthetic",
+      "source_id": "python",
+      "title": "Python AI Intern",
+      "company": "虚构招聘团队",
+      "jd": "用 Python、FastAPI 接入模型 API 并编写请求校验。\n要求可展示 Python 项目。",
+      "jd_summary": "用 Python、FastAPI 接入模型 API 并编写请求校验。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/python",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "worth_applying"
+    },
+    "preferred": {
+      "source": "synthetic",
+      "source_id": "preferred",
+      "title": "AI Prototyping Intern",
+      "company": "虚构招聘团队",
+      "jd": "用 Python、FastAPI 开发接口和日志。\nPhD preferred; undergraduate candidates welcome.",
+      "jd_summary": "用 Python、FastAPI 开发接口和日志。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/preferred",
+      "remote": true,
+      "location_restrictions": [],
+      "employment_type": "Intern",
+      "human_label": "worth_applying"
+    },
+    "us": {
+      "source": "synthetic",
+      "source_id": "us",
+      "title": "AI Backend Intern · US Only",
+      "company": "虚构招聘团队",
+      "jd": "用 Python、FastAPI 开发接口和请求校验。\nOpen only to applicants in the United States.",
+      "jd_summary": "用 Python、FastAPI 开发接口和请求校验。",
+      "detail_status": "detail",
+      "url": "https://example.invalid/jobs/us",
+      "remote": true,
+      "location_restrictions": [
+        "United States"
+      ],
+      "employment_type": "Intern",
+      "human_label": "skip"
+    }
+  },
+  "buckets": {
+    "drift": [
+      "phd-a",
+      "phd-b",
+      "phd-c",
+      "sales",
+      "preferred"
+    ],
+    "focused": [
+      "api",
+      "rag",
+      "agent",
+      "python",
+      "preferred"
+    ],
+    "clarify": [
+      "us"
+    ]
+  }
+}

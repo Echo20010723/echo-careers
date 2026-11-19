@@ -1,0 +1,36 @@
+llm_provider: openai
+model_mode: mock
+use_demo_resume: true
+vector_backend: chroma
+model_extract: gpt-5.4-mini
+model_match: gpt-5.4-mini
+model_reply: gpt-5.4-mini
+embedding_model: text-embedding-3-small
+embedding_dimensions: 1536
+timeout: 45
+retries: 1
+max_calls: 100
+max_output_tokens: 4096
+max_input_chars: 60000
+reasoning_effort: null
+weights: {skill: 0.6, project: 0.3, intention: 0.1}
+
+# 本人2026-11-17要求：默认自动串联匹配、沟通准备与草稿。
+default_mode: auto
+automatic_pipeline: true
+
+boss_browser: chrome
+
+# 已停止CDP及后台网页读取，避免干扰本人页面。
+boss_cdp_enabled: false
+
+# 旧 BOSS 连接器关闭。岗位发现使用招聘来源的公开 API。
+managed_boss_enabled: false
+boss_auto_search: false
+boss_search_query: AI实习
+boss_batch_size: 20
+
+boss_auto_contact: false
+
+# 当前没有BOSS平台第三方接入许可，禁止连接/读取/发信。
+boss_platform_authorized: false

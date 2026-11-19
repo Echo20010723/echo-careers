@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-let state = {}, selected = null, refreshing = false, busy = 0, currentResume = null;
+let state = {}, selected = null, refreshing = false, busy = 0, currentResume = null, initialized = false;
 const statusNames = {draft:'草稿已准备',queued:'待自动处理',blocked:'需要确认',sending:'正在发送',sent:'已发送',failed:'处理失败',unknown:'发送结果待核实',cancelled:'已取消',active:'初聊中',waiting_response:'等待回复',handoff:'需要你接手'};
 function el(tag, text, cls) { const n=document.createElement(tag); if(text!==undefined)n.textContent=text; if(cls)n.className=cls; return n; }
 function notice(text,error=false) { $('notice').textContent=text; $('notice').className=error?'error':''; $('notice').style.display='block'; clearTimeout(window.noticeTimer); window.noticeTimer=setTimeout(()=>$('notice').style.display='none',12000); }
@@ -20,6 +20,7 @@ function tab(id){
   button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
  });
+ if(id!=='discovery') refresh(!initialized).catch(e=>notice(e.message,true));
 }
 document.querySelectorAll('nav button').forEach(n=>n.onclick=()=>tab(n.dataset.tab));
 function details(title,key){const d=el('details');d.dataset.key=key;d.append(el('summary',title));return d;}
@@ -68,6 +69,7 @@ async function refresh(initial=false){if(refreshing)return;refreshing=true;const
  renderApplications();
  $('system-summary').textContent = state.model_mode === 'mock' ? '本机规则分析（Mock）' : '已配置在线模型';
  for(const key of opened)document.querySelectorAll('details[data-key]').forEach(n=>{if(n.dataset.key===key)n.open=true;});
+ initialized=true;
  }finally{refreshing=false;}}
 $('start').onclick=()=>run(async()=>{
  await api('/api/assistant/start','POST',{channel:'boss'});
@@ -171,4 +173,8 @@ $('application-form').onsubmit=event=>{
   notice('跟进已保存。');
  },event.submitter);
 };
-refresh(true).catch(e=>notice(e.message,true));setInterval(()=>{if(!busy&&document.visibilityState==='visible')refresh().catch(e=>notice(e.message,true));},2500);
+setInterval(()=>{
+ if(!busy&&document.visibilityState==='visible'&&!$('discovery').classList.contains('active')) {
+  refresh(!initialized).catch(e=>notice(e.message,true));
+ }
+},2500);

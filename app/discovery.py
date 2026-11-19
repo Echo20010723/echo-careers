@@ -1,9 +1,11 @@
 import json
 import logging
+from functools import lru_cache
 
+from .audit import measure
 from .discovery_models import DiscoveryRequest, JobCandidate, LocalSource, job_identity
 from .discovery_online import Himalayas, PLATFORM_NAMES, remote_query
-from .discovery_rules import RULE_VERSION, assess, evidence_index, rank_batch, select_candidates, suggest
+from .discovery_rules import RULE_VERSION, assess, evidence_index, prepare_match_evidence, rank_batch, select_candidates, suggest
 from .errors import AppError
 from .resumes import digest
 from .occupations import version as occupation_version
@@ -20,6 +22,8 @@ class Discovery:
         settings = service.settings
         self.occupation_path = None if settings.public_mode else (
             settings.occupation_templates or settings.root/'Career_Workbench_Resume_JD_Benchmark'/'jobs.jsonl')
+        # One bounded cache per workbench, including each isolated public visitor.
+        self.match_evidence = lru_cache(maxsize=8)(self._match_evidence)
         self.sources = {'himalayas':Himalayas()}
         self.local_source = LocalSource(service.settings.root / 'examples/jobs_demo.json')
         with self.store.tx() as db:
@@ -42,6 +46,10 @@ class Discovery:
         if not row:
             raise AppError('RESUME_NOT_FOUND')
         return row
+
+    @staticmethod
+    def _match_evidence(text):
+        return prepare_match_evidence(evidence_index(text))
 
     def summary(self, resume_id):
         resume = self.resume(resume_id)
@@ -102,6 +110,10 @@ class Discovery:
             db.execute("UPDATE discovery_batches SET stage='queued', error=NULL WHERE id=?", (batch_id,))
         return {'id': batch_id, 'stage': 'queued'}
 
+    def current_stage(self, batch_id):
+        row = self.store.one('SELECT stage FROM discovery_batches WHERE id=?', (batch_id,))
+        return row['stage'] if row else None
+
     def status(self, batch_id):
         row = self.store.one('SELECT * FROM discovery_batches WHERE id=?', (batch_id,))
         if not row:
@@ -140,11 +152,8 @@ class Discovery:
         try:
             request = DiscoveryRequest.saved(row['request'])
             resume = self.resume(request.resume_id)
-            index_key = f"discovery-index:{RULE_VERSION}:{resume['version']}"
-            index = self.store.get(index_key)
-            if index is None:
-                index = evidence_index(resume['text'])
-                self.store.set(index_key, index)
+            with measure(self.service.audit, 'resume_evidence', batch_id):
+                index = self.match_evidence(resume['text'])
             source_errors = []
             if not json.loads(row['counts']).get('reuse_candidates'):
                 if request.mode == 'online':
@@ -170,11 +179,13 @@ class Discovery:
         return True
 
     def fetch(self, batch_id, request):
-        rows = self.local_source.fetch(request)
+        with measure(self.service.audit, 'provided_jd_read', batch_id):
+            rows = self.local_source.fetch(request)
         self.stage(batch_id, 'deduplicating', {'fetched':len(rows)})
-        selected, matched, unique = select_candidates(rows, request.terms, request.limit)
+        direct = request.mode == 'paste'
+        selected, matched, unique = select_candidates(rows, request.terms, request.limit, include_unmatched=direct)
         counts = {'fetched':len(rows), 'matched':matched, 'unique':unique,
-                  'duplicates':matched-unique, 'selected':len(selected)}
+                  'duplicates':(len(rows) if direct else matched)-unique, 'selected':len(selected)}
         self.save_candidates(batch_id, request, selected, counts)
 
     def save_candidates(self, batch_id, request, groups, counts):
@@ -201,7 +212,7 @@ class Discovery:
             if len(existing) + len(prepared) >= request.limit:
                 continue
             payload = candidate.model_dump(exclude={'search_terms'})
-            payload.update(source=candidate.source or ('synthetic' if request.mode == 'demo' else ('manual' if request.mode == 'import' else request.platform)),
+            payload.update(source=candidate.source or ('synthetic' if request.mode == 'demo' else ('manual' if request.mode in {'import','paste'} else request.platform)),
                            data_mode=request.mode, matched_terms=hits,
                            retrieved_by=retrieved, lexical_matches=lexical,
                            detail_status=candidate.detail_status or ('detail' if candidate.jd else 'list_only'),
@@ -225,7 +236,7 @@ class Discovery:
         adapter = self.sources.get(request.platform)
         if adapter is None:
             raise AppError('ONLINE_SEARCH_NOT_CONFIGURED')
-        context = {}
+        context = {'audit':self.service.audit, 'trace_id':batch_id}
         key = 'discovery-online:'+batch_id
         saved = self.store.get(key) or {'terms':{},'rows':[],'fetched':0}
         pages = saved['terms']
@@ -303,10 +314,14 @@ class Discovery:
                 job_content = candidate.model_dump(exclude={'source','source_id','url','source_page_url','search_terms','imported_at'})
                 key = 'discovery-match:' + digest(dumps([resume['version'], config, constraints, job_content]))
                 result = self.store.get(key)
-                if result is None:
-                    result = assess(self.service, candidate, index, request)
-                    if result['evaluation_mode'] != 'local_fallback':
-                        self.store.set(key, result)
+                cache_hit = result is not None
+                if not cache_hit:
+                    with measure(self.service.audit, 'match_analysis', batch_id):
+                        result = assess(self.service, candidate, index, request)
+                else:
+                    self.service.audit.event('performance_stage', batch_id, stage='match_cache', status='hit')
+                if result['evaluation_mode'] != 'local_fallback' and not cache_hit:
+                    self.store.set(key, result)
                 with self.store.tx() as db:
                     db.execute('UPDATE discovery_items SET result=?, error=NULL WHERE id=?',
                                (dumps(result), item['id']))

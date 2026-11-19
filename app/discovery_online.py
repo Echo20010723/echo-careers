@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import httpx
 from pydantic import ValidationError
 
+from .audit import measure
 from .discovery_models import JobCandidate
 from .errors import AppError
 from .occupations import matched_query
@@ -146,7 +147,14 @@ class Himalayas:
             params['country'] = request.country
         if request.job_type == 'internship':
             params['employment_type'] = 'Intern'
-        rows = rows_in(read_api(HIMALAYAS_URL, params, timeout=context.get('timeout', 14)))
+        audit, trace_id = context.get('audit'), context.get('trace_id')
+        with measure(audit, 'source_request', trace_id, retry_count=0):
+            rows = rows_in(read_api(HIMALAYAS_URL, params, timeout=context.get('timeout', 14)))
+        with measure(audit, 'jd_extraction', trace_id):
+            candidates = self.extract_candidates(rows, term, request)
+        return SearchPage(candidates,bool(rows) and offset+1<MAX_PAGES,len(rows),query=query)
+
+    def extract_candidates(self, rows, term, request):
         candidates = []
         for row in rows:
             if not isinstance(row,dict):
@@ -166,4 +174,4 @@ class Himalayas:
             )
             if candidate and (request.job_type != 'internship' or candidate.employment_type == 'Intern'):
                 candidates.append(candidate)
-        return SearchPage(candidates,bool(rows) and offset+1<MAX_PAGES,len(rows),query=query)
+        return candidates

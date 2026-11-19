@@ -15,7 +15,7 @@
   });
   const error = message => notice(message, true);
   const key = text => text.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-  const modeNames = {online:'在线搜索', demo:'脱敏演示', import:'本地 JSON 导入'};
+  const modeNames = {online:'在线搜索', demo:'脱敏演示', import:'本地 JSON 导入', paste:'粘贴岗位正文'};
   const platformNames = {himalayas:'Himalayas', greenhouse:'Greenhouse', careerjet:'Careerjet 中国', boss:'旧 BOSS 批次'};
   const evaluationNames = {local_rules:'本地规则', local_fallback:'模型不可用 · 本地规则', model_with_rules:'模型提取 · 规则分档', model:'模型建议'};
   const gradeNames = ['夯', '顶级', '人上人', 'npc', '拉完了'];
@@ -127,7 +127,7 @@
       const saved = restoring ? readSearchDraft() : null;
       (saved?.terms || result.suggestions.map(item=>item.term)).forEach(addTerm);
       if (saved) {
-        setMode(saved.mode === 'import' ? 'online' : saved.mode);
+        setMode(['import','paste'].includes(saved.mode) ? 'online' : saved.mode);
         for (const [id,value] of Object.entries(saved.fields)) {
           if (draftFields.includes(id)) get(id).value = value;
         }
@@ -278,19 +278,27 @@
     get('discovery-mode').value = mode;
     get('discovery-file-field').hidden = mode !== 'import';
     get('discovery-job-file').required = mode === 'import';
+    get('discovery-jd-field').hidden = mode !== 'paste';
+    get('discovery-jd').required = mode === 'paste';
+    get('discovery-limit').disabled = mode === 'paste';
     get('discovery-online').hidden = online;
-    get('discovery-source-label').textContent = online ? 'Himalayas · 远程' : mode === 'import' ? '本地文件' : '脱敏演示';
+    get('discovery-source-label').textContent = online ? 'Himalayas · 远程' : mode === 'import' ? '本地文件' : mode === 'paste' ? '手动粘贴' : '脱敏演示';
     get('discovery-city-field').hidden = online;
     get('discovery-country-field').hidden = !online;
     get('discovery-type-field').hidden = !online;
     get('discovery-submit').textContent = {
-      online:'搜索岗位并排名', import:'导入并排名', demo:'运行脱敏演示',
+      online:'搜索岗位并排名', import:'导入并排名', paste:'分析岗位正文', demo:'运行脱敏演示',
     }[mode];
     get('discovery-mode-note').textContent = online
       ? '搜索 Himalayas 公开远程岗位。国家/地区用于筛选允许远程工作的范围。'
-      : mode === 'import' ? '读取你选择的本地文件，按职位词筛选。' : '使用内置虚构岗位。';
+      : mode === 'import' ? '读取你选择的本地文件，按职位词筛选。'
+      : mode === 'paste' ? '使用当前简历和粘贴的正文分析单个岗位。' : '使用内置虚构岗位。';
   }
   get('discovery-import').onclick = () => setMode('import');
+  get('discovery-paste-jd').onclick = () => {
+    setMode('paste');
+    get('discovery-jd').focus();
+  };
   get('discovery-demo').onclick = () => {setMode('demo'); get('discovery-task-form').requestSubmit(get('discovery-submit'));};
   get('discovery-online').onclick = () => setMode('online');
   const preferenceIds = ['discovery-city','discovery-country',
@@ -494,10 +502,13 @@
   function update() {
     const {stage,limit,counts,jobs} = batch;
     const current = counts.current_term ? ' · '+counts.current_term : '';
+    const sourceHint = batch.mode === 'online' && batch.error && !jobs.length
+      ? ' · 可在岗位原页复制正文，通过「更多方式 → 粘贴 JD」分析。'
+      : '';
     get('discovery-result-title').textContent = '岗位结果 '+jobs.length;
     get('discovery-round').hidden = false;
     get('discovery-status').textContent = (agentId ? 'Agent · ' : '')+(batch.reused_candidates ? '使用新简历重评原岗位 · 筛选词来自原搜索 · ' : '')+
-      (batch.mode === 'online' ? '' : modeNames[batch.mode]+' · ')+ (stages[stage] || ({running:'正在执行', waiting:'等待回答', interrupted:'本轮中断'}[stage] || stage))+current+(batch.error?' · '+batch.error:'');
+      (batch.mode === 'online' ? '' : modeNames[batch.mode]+' · ')+ (stages[stage] || ({running:'正在执行', waiting:'等待回答', interrupted:'本轮中断'}[stage] || stage))+current+(batch.error?' · '+batch.error:'')+sourceHint;
     const parts = [
       ['获取',counts.fetched],['命中',counts.matched],['去重后',counts.unique],
       ['本轮候选',counts.selected],['已分析',counts.analyzed],['失败',counts.failed],
@@ -554,11 +565,11 @@
   async function poll() {
     const requestedId = taskId;
     try {
-      const result = await api('/api/discovery/tasks/'+requestedId);
+      const result = await api('/api/discovery/tasks/'+requestedId+'?wait_ms=750');
       if (requestedId !== taskId) return;
       batch = result;
       update();
-      if (!terminal(batch.stage)) pollTimer = setTimeout(poll,750);
+      if (!terminal(batch.stage)) pollTimer = setTimeout(poll,0);
     } catch (e) {
       if (requestedId !== taskId) return;
       if ([404,422].includes(e.status)) {
@@ -615,15 +626,21 @@
     try {
       const terms = [...new Map([...get('discovery-terms').querySelectorAll('input')]
         .map(input=>input.value.trim()).filter(Boolean).map(term=>[key(term),term])).values()];
-      const limit = get('discovery-limit').valueAsNumber;
-      if (!terms.length || terms.length > 5 || terms.some(term=>term.length < 2 || term.length > 48 || /[。！？；;]/.test(term))) throw Error('请输入 1–5 个不同的短职位词，每个 2–48 字。');
-      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw Error('候选数量必须是 1–100 的整数。');
       const mode = get('discovery-mode').value;
+      const pasted = mode === 'paste';
+      const limit = pasted ? 1 : get('discovery-limit').valueAsNumber;
+      if ((!terms.length && !pasted) || terms.length > 5 || terms.some(term=>term.length < 2 || term.length > 48 || /[。！？；;]/.test(term))) throw Error('请输入 1–5 个不同的短职位词，每个 2–48 字。');
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw Error('候选数量必须是 1–100 的整数。');
       const sourceOptions = mode === 'online' ? {
         job_type:get('discovery-job-type').value,
         country:get('discovery-country').value.toUpperCase() || null,
       } : {};
       let jobs = [];
+      if (pasted) {
+        const jd = get('discovery-jd').value.trim();
+        if (!jd) throw Error('请粘贴岗位正文。');
+        jobs = [{title:'手动粘贴的岗位', jd}];
+      }
       if (mode === 'import') {
         const file = get('discovery-job-file').files[0];
         if (!file || file.size > 5 * 1024 * 1024) throw Error('请选择不超过 5 MB 的岗位 JSON。');
@@ -697,10 +714,10 @@
   async function pollAgent() {
     const id = agentId;
     try {
-      const run = await api('/api/discovery/agent/'+id);
+      const run = await api('/api/discovery/agent/'+id+'?wait_ms=650');
       if (id !== agentId) return;
       renderAgent(run);
-      if (!terminal(run.status) && run.status !== 'waiting') agentTimer = setTimeout(pollAgent, 650);
+      if (!terminal(run.status) && run.status !== 'waiting') agentTimer = setTimeout(pollAgent, 0);
     } catch (e) {
       if (id !== agentId) return;
       if (e.status === 404) {

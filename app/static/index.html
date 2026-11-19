@@ -6,8 +6,8 @@
   <title>Echo Careers · 实习与岗位工作台</title>
   <link rel="icon" type="image/png" href="/static/echo-logo.png">
   <link rel="stylesheet" href="/static/style.css?v=12">
-  <script defer src="/static/app.js?v=4"></script>
-  <script defer src="/static/discovery.js?v=12"></script>
+  <script defer src="/static/app.js?v=5"></script>
+  <script defer src="/static/discovery.js?v=13"></script>
   <script defer src="/static/discovery-layout.js?v=1"></script>
 </head>
 <body>
@@ -79,10 +79,12 @@
               <label id="discovery-type-field">职位类型<select id="discovery-job-type"><option value="any">不限</option><option value="internship">实习</option></select></label>
               <input type="hidden" id="discovery-mode" value="online">
               <p id="discovery-mode-note" class="muted" role="status">正在检查招聘来源。</p>
+              <label id="discovery-jd-field" hidden>岗位正文<textarea id="discovery-jd" rows="5" maxlength="18000"></textarea></label>
               <button type="submit" id="discovery-submit">搜索岗位并排名</button>
               <details><summary>更多方式</summary>
                 <div class="actions">
                   <button id="discovery-import" type="button" class="secondary">导入已有岗位</button>
+                  <button id="discovery-paste-jd" type="button" class="secondary">粘贴 JD</button>
                   <button id="discovery-demo" type="button" class="secondary">试用脱敏演示</button>
                   <button id="discovery-online" type="button" class="secondary" hidden>返回在线搜索</button>
                 </div>

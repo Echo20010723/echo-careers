@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from datetime import date
 from itertools import zip_longest
 
@@ -88,7 +89,7 @@ def suggest(service, index, template_path=None):
                         for name in ('求职方向','工作','实习','项目','技能','教育','认证')}}
 
 
-def select_candidates(rows, terms, limit):
+def select_candidates(rows, terms, limit, *, include_unmatched=False):
     groups = []
     lookup = {}
     matched = 0
@@ -97,9 +98,9 @@ def select_candidates(rows, terms, limit):
         lexical = {term for term in hits if term_matches(term,row,include_tags=False)}
         tags = {normalized(tag) for tag in row.search_terms}
         retrieval = {term for term in terms if normalized(term) in tags}
-        if not hits:
+        if not hits and not include_unmatched:
             continue
-        matched += 1
+        matched += bool(hits)
         keys = job_identity(row)
         existing = {lookup[key] for key in keys if key in lookup}
         if existing:
@@ -129,6 +130,8 @@ def select_candidates(rows, terms, limit):
             lookup[key] = group_id
     groups = [group for group in groups if group is not None]
     queues = [[i for i, group in enumerate(groups) if term in group['hits']] for term in terms]
+    if include_unmatched:
+        queues.append(list(range(len(groups))))
     selected = {}
     cursors = [0] * len(queues)
     while len(selected) < min(limit, len(groups)):
@@ -236,7 +239,21 @@ def rank_batch(jobs):
     return [{'grade': grade, 'count': count} for grade, count in zip(GRADES, counts)]
 
 
+@dataclass(frozen=True)
+class MatchEvidence:
+    rows: list
+    attributed: list
+    technical: bool
+
+
+def prepare_match_evidence(index):
+    attributed = [(row, duty_roles(row['quote'])) for row in index
+                  if row['category'] not in {'求职方向', '技能', '教育', '认证'}]
+    return MatchEvidence(index, attributed, any(roles & TECH for _, roles in attributed))
+
+
 def assess(service, job, index, request, *, use_model=True):
+    evidence = index if isinstance(index, MatchEvidence) else prepare_match_evidence(index)
     jd = job.jd or job.jd_summary or ''
     parts = [part.strip() for part in re.split(r'[。；;\n]+|[.!?](?=\s)', jd) if part.strip()][:30]
     bonus = [part for part in parts if re.search(r'加分|优先|nice to have|bonus|preferred', part, re.I)]
@@ -249,13 +266,9 @@ def assess(service, job, index, request, *, use_model=True):
     required_skills = set(skill_hits(' '.join(required)))
     skills = duty_skills | required_skills
     jd_roles = duty_roles(' '.join(duties))
-    grounded = [row for row in index if row['category'] not in {'求职方向','技能','教育','认证'}]
-    attributed = [(row,duty_roles(row['quote'])) for row in grounded]
-    overlap = [(row, roles & jd_roles) for row,roles in attributed if roles & jd_roles]
-    responsibility_lines = {row['line'] for row, _ in overlap}
-    technical_resume = any(roles & TECH for _,roles in attributed)
+    responsibility_lines = {row['line'] for row, roles in evidence.attributed if roles & jd_roles}
     relevant = sorted(
-        (row for row in index if row['line'] in responsibility_lines or set(row['skills']).intersection(skills)),
+        (row for row in evidence.rows if row['line'] in responsibility_lines or set(row['skills']).intersection(skills)),
         key=lambda row: (row['line'] in responsibility_lines, row['category'] in ('项目', '工作', '实习'),
                          len(set(row['skills']).intersection(skills))),
         reverse=True,
@@ -308,15 +321,15 @@ def assess(service, job, index, request, *, use_model=True):
     required_coverage = len(required_skills - set(missing)) / len(required_skills) if required_skills else .5
     score = round(45 * duty_coverage + 30 * project_coverage + 25 * required_coverage)
 
-    if overlap and not skills:
-        score = max(score, min(78, 56+7*len(overlap)))
-    if conflicts or non_technical and technical_resume and not overlap:
+    if responsibility_lines and not skills:
+        score = max(score, min(78, 56+7*len(responsibility_lines)))
+    if conflicts or non_technical and evidence.technical and not responsibility_lines:
         grade, reason = 4, '存在明确硬条件冲突' if conflicts else '实际职责与简历的技术经历方向不符'
-    elif not jd or (not overlap and (not technical or not covered & skills)):
+    elif not jd or (not responsibility_lines and (not technical or not covered & skills)):
         grade, reason = 3, '完整 JD 或简历相关证据不足，需人工核对'
     elif not job.jd or job.detail_status == 'list_only':
         grade, reason = 2, '公开摘要有相关证据，完整职责与必需条件待核对'
-    elif missing or not (project_coverage or overlap) or any(row['name'] == '正式经验' and row['evidence'] for row in conditions):
+    elif missing or not (project_coverage or responsibility_lines) or any(row['name'] == '正式经验' and row['evidence'] for row in conditions):
         grade, reason = 2, '有相关证据，但核心职责、技能或经验仍需核对'
     elif score >= 85 and len(duty_skills & project_skills) >= 2:
         grade, reason = 0, '核心职责有多项项目证据支持，未发现明确硬条件冲突'

@@ -2,6 +2,7 @@ import io,json,re,hashlib
 from pathlib import Path
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
+from .audit import measure
 from .errors import AppError
 from .store import uid,now,dumps
 
@@ -88,8 +89,9 @@ class Resumes:
             return {'id':rid, 'name':name}
         self.select(rid)
         return self.current()
-    def upload(self,name,content,*,select=True):
-        text=read_resume(name,content)
+    def upload(self,name,content,*,select=True, audit=None):
+        with measure(audit, 'resume_parse'):
+            text=read_resume(name,content)
         directory=self.settings.data_dir/'resumes'; directory.mkdir(parents=True,exist_ok=True)
         path=directory/(uid()+Path(name).suffix.lower()); path.write_bytes(content)
         return self.save(Path(name).name,text,split_semantic(text,Path(name).name),str(path),select=select)

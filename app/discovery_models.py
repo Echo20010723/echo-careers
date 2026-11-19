@@ -100,9 +100,9 @@ class DiscoveryRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     resume_id: str = Field(min_length=1, max_length=100)
     platform: Literal['himalayas','greenhouse','careerjet','boss'] = 'himalayas'
-    mode: Literal['online', 'demo', 'import'] = 'online'
+    mode: Literal['online', 'demo', 'import', 'paste'] = 'online'
     limit: int = Field(50, ge=1, le=100, strict=True)
-    terms: list[str] = Field(min_length=1, max_length=100)
+    terms: list[str] = Field(max_length=100)
     jobs: list[JobCandidate] = Field(default_factory=list, max_length=1000)
     city: str | None = Field(None, max_length=40)
     country: str | None = Field(None, pattern=r'^[A-Z]{2}$')
@@ -124,7 +124,7 @@ class DiscoveryRequest(BaseModel):
     @classmethod
     def validate_terms(cls, values):
         values = clean_terms(values)
-        if not 1 <= len(values) <= 5 or any(not 2 <= len(v) <= 48 or re.search(r'[\n\r。！？；;]', v) for v in values):
+        if len(values) > 5 or any(not 2 <= len(v) <= 48 or re.search(r'[\n\r。！？；;]', v) for v in values):
             raise ValueError('请输入 1–5 个不同的短职位词，每个 2–48 字')
         return values
 
@@ -136,6 +136,13 @@ class DiscoveryRequest(BaseModel):
 
     @model_validator(mode='after')
     def validate_mode(self):
+        if self.mode == 'paste':
+            if len(self.jobs) != 1 or not self.jobs[0].jd:
+                raise ValueError('请粘贴一份岗位正文')
+            self.limit = 1
+            return self
+        if not self.terms:
+            raise ValueError('请填写至少一个职位词')
         if self.mode == 'online' and any(not re.fullmatch(r'[\w +#.-]+', value) for value in [*self.terms, self.city or '城市']):
             raise ValueError('在线搜索词和城市只能填写地点、职位及技能名称')
         if (self.mode == 'import') != bool(self.jobs):
@@ -158,7 +165,7 @@ class LocalSource:
         self.demo_path = demo_path
 
     def fetch(self, request):
-        if request.mode == 'import':
+        if request.mode in {'import','paste'}:
             return request.jobs
         import json
         return [JobCandidate.model_validate(row) for row in json.loads(self.demo_path.read_text(encoding='utf-8-sig'))]

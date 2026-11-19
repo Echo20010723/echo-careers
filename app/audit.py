@@ -1,8 +1,30 @@
+import json
+import time
+from contextlib import contextmanager
 from contextvars import ContextVar
-REQUEST_ID=ContextVar("request_id",default="local")
-import json,time
-from datetime import datetime,timezone,timedelta
+from datetime import datetime, timezone
+
 from .store import now
+
+REQUEST_ID = ContextVar("request_id", default="local")
+
+
+@contextmanager
+def measure(audit, stage, request_id=None, **fields):
+    if audit is None:
+        yield
+        return
+    started = time.perf_counter()
+    status = 'ok'
+    try:
+        yield
+    except Exception:
+        status = 'error'
+        raise
+    finally:
+        audit.event('performance_stage', request_id or REQUEST_ID.get(), stage=stage, status=status,
+                    duration_ms=round((time.perf_counter()-started)*1000, 2), **fields)
+
 class Audit:
     def __init__(self,root,data):
         cfg=json.loads((root/'config/logging_rules.json').read_text(encoding='utf-8'))

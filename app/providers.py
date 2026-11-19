@@ -105,6 +105,8 @@ class OpenAIProvider:
             except (RateLimitError,APITimeoutError,APIConnectionError,APIStatusError) as e:
                 code='MODEL_RATE_LIMITED' if isinstance(e,RateLimitError) else 'MODEL_TIMEOUT' if isinstance(e,APITimeoutError) else 'MODEL_UNAVAILABLE'
                 retryable=isinstance(e,(RateLimitError,APITimeoutError,APIConnectionError)) or getattr(e,'status_code',0)>=500
+                self.audit.event('model_call_failed', request_id, stage=stage, status='error',
+                                 error_code=code, retry_count=attempt, duration_ms=round((time.monotonic()-started)*1000))
                 if not retryable or attempt==retries: raise AppError(code) from None
                 time.sleep(min(.25*2**attempt,2))
             except Exception as e:

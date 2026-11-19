@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .discovery_models import JobCandidate, job_identity
 from .discovery_online import Himalayas, remote_query
-from .discovery_rules import assess, evidence_index
+from .audit import measure
+from .discovery_rules import assess
 from .errors import AppError
 from .store import dumps, uid
 
@@ -116,6 +117,10 @@ class DiscoveryAgent:
             db.execute('INSERT INTO agent_runs VALUES(?,?,?)', (state['run_id'],'queued',dumps(state)))
         return {'run_id':state['run_id'], 'status':'queued'}
 
+    def current_stage(self, run_id):
+        row = self.store.one('SELECT status FROM agent_runs WHERE id=?', (run_id,))
+        return row['status'] if row else None
+
     def status(self, run_id):
         row = self.store.one('SELECT status,state FROM agent_runs WHERE id=?', (run_id,))
         if row is None:
@@ -151,7 +156,7 @@ class DiscoveryAgent:
             state['question'] = None
             resume = db.execute('SELECT text FROM resumes WHERE id=?', (state['options']['resume_id'],)).fetchone()
             options = AgentInput.model_validate(state['options'])
-            index = evidence_index(resume['text'])
+            index = self.discovery.match_evidence(resume['text'])
             for job_id in state['read']:
                 candidate = JobCandidate.model_validate(state['jobs'][job_id])
                 state['read'][job_id] = self.evaluate(candidate, options, index)
@@ -178,7 +183,7 @@ class DiscoveryAgent:
         try:
             options = AgentInput.model_validate(state['options'])
             resume = self.discovery.resume(options.resume_id)
-            index = evidence_index(resume['text'])
+            index = self.discovery.match_evidence(resume['text'])
             remaining = state['budget']['seconds'] - state['spent']['seconds']
             if remaining < 1:
                 self.finish(state, '已达到本轮时间预算。')
@@ -233,7 +238,7 @@ class DiscoveryAgent:
                 'terms':state['terms'], 'queries':state['queries'], 'unread':observations, 'read':inspected,
                 'weekly_days':options.weekly_days, 'internship_months':options.internship_months,
                 'graduation_year':options.graduation_year, 'available_from':state['options'].get('available_from'),
-                'resume_signals':sorted({skill for row in index for skill in row['skills']}),
+                'resume_signals':sorted({skill for row in index.rows for skill in row['skills']}),
                 'evidence':state['evidence'], 'asked':state['asked'], 'events':state['events'][-8:],
                 'remaining':{key:round(value-state['spent'][key], 2) for key,value in state['budget'].items()},
             }))
@@ -268,7 +273,7 @@ class DiscoveryAgent:
         restrictive = any(item.get('location_restrictions') for item in state['jobs'].values())
         if options.source == 'clarify' and restrictive and not options.country and 'country' not in state['asked']:
             return make('ask', 'country')
-        skills = {skill for row in index for skill in row['skills']}
+        skills = {skill for row in index.rows for skill in row['skills']}
         alternatives = (['AI backend intern'] if 'FastAPI' in skills else []) + (['RAG engineering intern'] if 'RAG' in skills else [])
         if options.source != 'online' and 'AI backend intern' not in alternatives:
             alternatives.append('AI backend intern')
@@ -316,8 +321,10 @@ class DiscoveryAgent:
             events.append({'action':'search','summary':f'{reason} {result.query}，新增 {new} / {len(result.jobs)} 条。'})
         elif name == 'read':
             state['spent']['reads'] += 1
-            candidate = JobCandidate.model_validate(state['jobs'][arg])
-            result = self.evaluate(candidate, options, index)
+            with measure(self.service.audit, 'provided_jd_read', state['run_id']):
+                candidate = JobCandidate.model_validate(state['jobs'][arg])
+            with measure(self.service.audit, 'match_analysis', state['run_id']):
+                result = self.evaluate(candidate, options, index)
             state['read'][arg] = result
             checks = result['eligibility']
             status = '明确写有博士要求' if checks['degree_quote'] else '博士优先，未列为硬条件' if checks['degree_preferred'] else '已核对职责与条件' if candidate.jd else '仅有摘要'
@@ -326,13 +333,14 @@ class DiscoveryAgent:
             state['retrieved'] = True
             row = self.store.one('SELECT chunks,name FROM resumes WHERE id=?', (resume['id'],))
             try:
-                found = self.service.rag.search(arg, {**resume,'name':row['name'],'chunks':json.loads(row['chunks'])})
+                with measure(self.service.audit, 'resume_retrieval', state['run_id']):
+                    found = self.service.rag.search(arg, {**resume,'name':row['name'],'chunks':json.loads(row['chunks'])})
             except AppError as error:
                 found = {'facts':[]}
                 events.append({'action':'retrieve_error','summary':error.message})
             facts = [fact['text'] for fact in found['facts']]
             state['evidence'] = [EvidenceObservation(line=item['line'], quote=item['quote']).model_dump()
-                                 for item in index if any(item['quote'] in chunk for chunk in facts)][:5]
+                                 for item in index.rows if any(item['quote'] in chunk for chunk in facts)][:5]
             events.append({'action':'retrieve','summary':f'检索当前简历，定位 {len(state["evidence"])} 条原文证据。'})
         elif name == 'ask':
             state['asked'].append(arg)

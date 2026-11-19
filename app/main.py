@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 import asyncio,json,re,time,os
-from fastapi import FastAPI,UploadFile,File,Request
+from fastapi import FastAPI,UploadFile,File,Query,Request
 from fastapi.responses import JSONResponse,FileResponse,Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -29,6 +29,28 @@ def create_app(settings=None, *, _public_scope=False):
     agent=DiscoveryAgent(service, discovery)
     discovery_drafts=DiscoveryDrafts(service)
     discovery_ready=asyncio.Event()
+    progress_changed=asyncio.Event()
+
+    def notify_progress():
+        nonlocal progress_changed
+        progress_changed.set()
+        progress_changed=asyncio.Event()
+
+    async def discovery_snapshot(read, initial_stage, key, wait_ms):
+        timeout = asyncio.get_running_loop().time() + wait_ms / 1000
+        while wait_ms:
+            changed = progress_changed
+            if await asyncio.to_thread(initial_stage, key) not in {'queued','running','fetching','deduplicating','analyzing'}:
+                break
+            remaining = timeout - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(changed.wait(), remaining)
+            except TimeoutError:
+                break
+        return await asyncio.to_thread(read, key)
+
     @asynccontextmanager
     async def lifespan(app):
         async def worker():
@@ -45,7 +67,11 @@ def create_app(settings=None, *, _public_scope=False):
                 discovery_ready.clear()
                 while True:
                     run_work = await asyncio.to_thread(agent.advance)
+                    if run_work:
+                        notify_progress()
                     search_work = await asyncio.to_thread(discovery.advance)
+                    if search_work:
+                        notify_progress()
                     if not (run_work or search_work): break
         runner=asyncio.create_task(worker())
         discovery_runner=asyncio.create_task(discovery_worker())
@@ -84,7 +110,9 @@ def create_app(settings=None, *, _public_scope=False):
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Content-Security-Policy']="default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'"
-        service.audit.event('request_completed',request_id,stage='http',duration_ms=round((time.monotonic()-started)*1000),status=str(response.status_code))
+        duration_ms=round((time.monotonic()-started)*1000)
+        response.headers['Server-Timing']=f'app;dur={duration_ms}'
+        service.audit.event('request_completed',request_id,stage='http',duration_ms=duration_ms,status=str(response.status_code))
         return response
     @app.exception_handler(AppError)
     async def known_error(request,e): return JSONResponse({'error':{'code':e.code,'message':e.message,'request_id':request.state.request_id}},status_code=e.status)
@@ -102,7 +130,7 @@ def create_app(settings=None, *, _public_scope=False):
     @app.post('/api/resumes')
     async def upload(file:UploadFile=File(...)):
         content=await file.read(5*1024*1024+1)
-        with service.action_gate: result=await asyncio.to_thread(service.resumes.upload,file.filename or 'resume.txt',content)
+        with service.action_gate: result=await asyncio.to_thread(service.resumes.upload,file.filename or 'resume.txt',content,audit=service.audit)
         return {k:v for k,v in result.items() if k!='path'}
     @app.post('/api/resumes/{rid}/select')
     def select_resume(rid:str):
@@ -127,12 +155,12 @@ def create_app(settings=None, *, _public_scope=False):
     @app.post('/api/discovery/resumes')
     async def upload_discovery_resume(file:UploadFile=File(...)):
         content=await file.read(5*1024*1024+1)
-        return await asyncio.to_thread(service.resumes.upload, file.filename or 'resume.txt', content, select=False)
+        return await asyncio.to_thread(service.resumes.upload, file.filename or 'resume.txt', content, select=False, audit=service.audit)
 
     @app.post('/api/discovery/resume-text')
     def paste_resume(data: PasteResume):
         with service.action_gate:
-            row = service.resumes.upload('粘贴的简历.txt', data.text.encode('utf-8'))
+            row = service.resumes.upload('粘贴的简历.txt', data.text.encode('utf-8'), audit=service.audit)
         return {'id':row['id'], 'name':row['name']}
 
     @app.get('/api/discovery/resumes/{resume_id}/terms')
@@ -142,7 +170,7 @@ def create_app(settings=None, *, _public_scope=False):
     @app.post('/api/discovery/example')
     def discovery_example():
         sample = settings.root / 'examples/resume_demo.md'
-        return service.resumes.upload('脱敏示例.md', sample.read_bytes(), select=False)
+        return service.resumes.upload('脱敏示例.md', sample.read_bytes(), select=False, audit=service.audit)
 
     @app.get('/api/discovery/sources')
     def discovery_sources():
@@ -159,12 +187,13 @@ def create_app(settings=None, *, _public_scope=False):
     @app.post('/api/discovery/agent', status_code=202)
     async def start_agent(data: AgentInput):
         run = await asyncio.to_thread(agent.create, data)
+        service.audit.event('task_accepted', REQUEST_ID.get(), stage='agent', job_id=run['run_id'])
         discovery_ready.set()
         return run
 
     @app.get('/api/discovery/agent/{run_id}')
-    def agent_status(run_id: str):
-        return agent.status(run_id)
+    async def agent_status(run_id: str, wait_ms: int = Query(0, ge=0, le=1000)):
+        return await discovery_snapshot(agent.status, agent.current_stage, run_id, wait_ms)
 
     @app.get('/api/discovery/agent/{run_id}/export')
     def agent_export(run_id: str):
@@ -182,12 +211,13 @@ def create_app(settings=None, *, _public_scope=False):
     @app.post('/api/discovery/tasks', status_code=202)
     async def create_discovery(data: DiscoveryRequest):
         task = await asyncio.to_thread(discovery.create, data)
+        service.audit.event('task_accepted', REQUEST_ID.get(), stage='discovery', job_id=task['id'])
         discovery_ready.set()
         return task
 
     @app.get('/api/discovery/tasks/{batch_id}')
-    def discovery_status(batch_id: str):
-        return discovery.status(batch_id)
+    async def discovery_status(batch_id: str, wait_ms: int = Query(0, ge=0, le=1000)):
+        return await discovery_snapshot(discovery.status, discovery.current_stage, batch_id, wait_ms)
 
     @app.post('/api/discovery/tasks/{batch_id}/reanalyze', status_code=202)
     async def reanalyze_discovery(batch_id: str, data: ReanalysisRequest):

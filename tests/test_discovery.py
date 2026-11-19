@@ -230,6 +230,57 @@ def test_existing_resume_reads_late_project_delivery_but_excludes_tool_lists(dis
                for item in data['suggestions'])
 
 
+def test_match_prepares_current_resume_once_and_returns_when_ready(discovery_client, monkeypatch):
+    import app.discovery as module
+
+    original = module.prepare_match_evidence
+    prepared = []
+    def observe(rows):
+        prepared.append(rows)
+        return original(rows)
+    monkeypatch.setattr(module, 'prepare_match_evidence', observe)
+    client = discovery_client
+    resume_a = upload(client)
+    resume_b = client.post('/api/discovery/resume-text',
+                           json={'text':'工作经历：使用 Vue 开发前端组件，实现响应式页面。'}).json()['id']
+    jobs = [{'source_id':'fast-api','title':'Python 后端',
+             'jd':'使用 Python、FastAPI 开发接口。', 'search_terms':['Python 后端实习']},
+            {'source_id':'front','title':'前端',
+             'jd':'使用 Vue 开发前端组件。', 'search_terms':['Python 后端实习']}]
+    summaries = []
+    for rid in (resume_a, resume_a, resume_b):
+        created = start(client, rid, mode='import', jobs=jobs)
+        assert created.status_code == 202
+        response = client.get(f"/api/discovery/tasks/{created.json()['id']}?wait_ms=1000")
+        assert response.headers.get('x-request-id') and response.headers.get('server-timing','').startswith('app;dur=')
+        snapshot = response.json()
+        assert snapshot['stage'] == 'complete'
+        assert snapshot['resume']['id'] == rid
+        summaries.append([row['analysis'] for row in snapshot['jobs']])
+    assert len(prepared) == 2
+    assert summaries[0] == summaries[1]
+    assert summaries[2] != summaries[1]
+
+
+def test_paste_matches_without_search_terms_or_source_request(discovery_client, monkeypatch):
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Pasting JD must not request the external source')
+
+    monkeypatch.setattr('app.discovery_online.read_api', unexpected)
+    client = discovery_client
+    rid = upload(client)
+    jd = '使用 Python、FastAPI 开发接口。'
+    response = start(client, rid, mode='paste', terms=[], jobs=[{'title':'粘贴岗位', 'jd':jd}])
+    assert response.status_code == 202
+    batch = result(client, response.json()['id'])
+    assert batch['stage'] == 'complete' and batch['limit'] == 1
+    assert batch['counts']['matched'] == 0 and batch['counts']['duplicates'] == 0
+    job, = batch['jobs']
+    assert job['jd'] == jd and job['source'] == 'manual'
+    assert job['analysis']['evidence'] and job['matched_terms'] == []
+    assert start(client, rid, mode='paste', jobs=[{'title':'无正文'}]).status_code == 422
+
+
 def test_actual_frontend_work_and_explicit_weekly_requirement(discovery_client):
     client = discovery_client
     rid = upload(client)

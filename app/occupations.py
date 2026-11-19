@@ -84,13 +84,21 @@ def _hits(role, text):
     return sum(phrase_in(phrase, text) for phrase in role['signals'])
 
 
+@lru_cache(maxsize=256)
+def _role_patterns(signals):
+    return tuple((_pattern(phrase), phrase.isascii()) for phrase in signals)
+
+
 def duty_roles(text):
     """Use actual responsibilities only; technical tools without a delivery signal do not define a role."""
+    folded = text.casefold()
+    compact = normalized(text)
     output = set()
     for role in catalog():
-        hits = _hits(role, text)
-        if hits and (role['id'] not in {'agent','llm','backend'} or role_evidence(role, text)):
-            output.add(role['id'])
+        if any(pattern.search(folded if ascii_phrase else compact)
+               for pattern, ascii_phrase in _role_patterns(role['signals'])):
+            if role['id'] not in {'agent','llm','backend'} or role_evidence(role, text):
+                output.add(role['id'])
     return output
 
 

@@ -4,6 +4,7 @@ from concurrent.futures import Future
 from datetime import datetime, timezone
 import json
 import re
+import ssl
 from threading import Lock
 from time import monotonic
 
@@ -207,7 +208,7 @@ class WorkersDrafts:
                     self.cooldown = monotonic() + delay
                     self.cooldown_reason = reason
                 return (None, reason), usage
-            if response.is_error:
+            if not response.is_success:
                 upstream_code = None
                 try:
                     candidate = response.json()['errors'][0]['code']
@@ -219,7 +220,6 @@ class WorkersDrafts:
                     self.last_http_error = {'status':response.status_code, 'code':upstream_code}
                 reason = 'provider_auth' if response.status_code in {401, 403} else 'provider_error'
                 return (None, reason), usage
-            response.raise_for_status()
             envelope = response.json()
             metadata = envelope.get('usage')
             if isinstance(metadata, dict):
@@ -235,7 +235,19 @@ class WorkersDrafts:
             return (result, None), usage
         except httpx.TimeoutException:
             return (None, 'timeout'), usage
-        except httpx.HTTPError:
+        except httpx.HTTPError as error:
+            causes = []
+            current = error
+            for _ in range(4):
+                if current is None:
+                    break
+                if isinstance(current, ssl.SSLCertVerificationError):
+                    causes.append('TLSCertificateVerification')
+                    break
+                causes.append(type(current).__name__)
+                current = current.__cause__
+            with self.lock:
+                self.last_http_error = {'transport':causes}
             return (None, 'provider_error'), usage
         except (ValueError, KeyError, TypeError, IndexError, AttributeError, RecursionError):
             return (None, 'invalid_output'), usage

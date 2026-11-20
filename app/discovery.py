@@ -63,7 +63,9 @@ class Discovery:
             cached = suggest(self.service, index, self.occupation_path)
             if cached['mode'] != 'local_fallback':
                 self.store.set(key, cached)
-        return {'resume_id': resume_id, 'resume_version':resume['version'], 'occupation_version':version, **cached}
+        preferences = self.store.get('preferences') or {}
+        return {'resume_id': resume_id, 'resume_version':resume['version'], 'occupation_version':version,
+                'preferred_terms':preferences.get('keywords', []), **cached}
 
     def source_status(self):
         return {'sources':[{'id':key,'name':PLATFORM_NAMES[key],'ready':source.ready}

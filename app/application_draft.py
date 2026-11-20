@@ -4,6 +4,7 @@ import re
 
 from .discovery_rules import evidence_index, skill_hits
 from .resumes import digest
+from .policy import unsafe_instruction
 from .store import dumps
 from .workers_drafts import statement_length
 
@@ -32,9 +33,9 @@ ENGINEERING = (
     ('数据处理', 'data processing', r'数据处理|数据清洗|data processing|data cleaning'),
 )
 ACTION = re.compile(
-    r'梳理|调研|主持|制定|分析|设计|实现|开发|构建|搭建|编写|验证|测试|部署|负责|参与|完成|'
+    r'梳理|调研|主持|制定|分析|设计|实现|开发|构建|搭建|编写|验证|测试|部署|负责|参与|完成|巡检|维护|排查|监控|处理|'
     r'\b(?:built|developed|implemented|designed|tested|wrote|analy[sz]ed|conducted|prioriti[sz]ed|'
-    r'deployed|validated|contributed|participated)\b', re.I,
+    r'deployed|validated|contributed|participated|maintained|monitored|operated|troubleshot)\b', re.I,
 )
 NEGATION = re.compile(r'未曾|尚未|没有|未参与|未完成|未实现|未做过|未使用|不熟悉|\b(?:not yet|never|did not|no experience)\b', re.I)
 
@@ -172,20 +173,53 @@ def generate_narrative(job, data, resume, workers, settings, payload):
 
 
 QUESTION_INTENTS = (
-    ('eligibility', r'到岗|签证|工作资格|出勤|薪资|work authori[sz]ation|sponsor|eligib|availability|available to start|salary'),
+    ('introduction', r'自我介绍|(?:介绍|说说|谈谈).{0,12}(?:你?自己|你的背景|个人背景)|introduce yourself|(?:tell|talk to) (?:us|me) about yourself|your background'),
     ('challenge', r'挑战|调试|故障|如何解决|challeng|debug|troubleshoot|how did you solve'),
     ('collaboration', r'协作|合作|团队|collaborat|teamwork|worked with'),
     ('motivation', r'兴趣|为什么想|动机|motiv|interest|attract|why (?:this|do you want)'),
-    ('fit', r'匹配|适合|优势|good fit|why .* fit|qualification|strength'),
-    ('experience', r'经验|经历|项目|举例|example|experience|project|tell us about|describe'),
+    ('fit', r'匹配|适合|胜任|优势|good fit|why .* fit|qualification|strength|suitable'),
+    ('experience', r'经验|经历|项目|举例|example|experience|project'),
+)
+
+QUESTION_FACTS = (
+    ('salary', '期望薪资', 'salary expectations', r'薪资|薪酬|工资|待遇|salary|compensation|pay expectations'),
+    ('visa', '签证或工作资格', 'visa or work authorization', r'签证|工作资格|工作许可|work authori[sz]ation|visa|sponsor|eligible to work'),
+    ('start', '到岗日期', 'start date', r'到岗|入职日期|何时入职|什么时候入职|when can you start|start date|available to start|availability'),
+    ('attendance', '每周出勤天数', 'days per week', r'出勤|每周.{0,8}天|days per week'),
+    ('duration', '实习时长', 'internship duration', r'实习.{0,8}(?:多久|时长|期限|几个月)|internship duration|how long can you intern'),
 )
 
 
 def question_focus(question, language):
     # The free-text question stays local. Only canonical intent and topic labels leave the server.
-    phrases = topics(question, language)[:6]
-    intent = next((name for name, pattern in QUESTION_INTENTS if re.search(pattern,question,re.I)), None)
-    return intent or ('experience' if phrases else 'manual' if question else 'fit'), phrases
+    if unsafe_instruction(question):
+        return 'manual', [], []
+    facts = [row for row in QUESTION_FACTS if re.search(row[3], question, re.I)]
+    # Remove fact phrases before looking for evidence questions; a visa question alone is not a request for experience.
+    evidence_question = question
+    for _, _, _, pattern in facts:
+        evidence_question = re.sub(pattern, '', evidence_question, flags=re.I)
+    phrases = topics(evidence_question, language)[:6]
+    intent = next((name for name, pattern in QUESTION_INTENTS if re.search(pattern, evidence_question, re.I)), None)
+    if intent is None and not facts and re.search(r'tell (?:us|me) about|describe', evidence_question, re.I):
+        intent = 'experience'
+    return intent or ('experience' if phrases else 'eligibility' if facts else 'manual' if question else 'fit'), phrases, facts
+
+
+def statement_facts(data, facts, language):
+    confirmed = {
+        'start':data.available_from.isoformat() if data.available_from else None,
+        'attendance':data.weekly_days,
+        'duration':data.internship_months,
+    }
+    known, missing = [], []
+    for field, zh, en, _ in facts:
+        label = zh if language == 'zh' else en
+        if value := confirmed.get(field):
+            known.append(f'{label}：{value}' if language == 'zh' else f'{label}: {value}')
+        else:
+            missing.append(label)
+    return known, missing
 
 
 def statement_duties(job, language, role, question_topics):
@@ -229,7 +263,10 @@ def statement_fallback(language, intent, duties, evidence, limit):
         linked = conjunction.join(chosen[:2])
         use = ('我曾参与'+linked+'，这段经历可用于岗位相关工作。' if zh else
                f'My work on {linked} is relevant to the responsibilities of this role.')
-        if intent == 'motivation' and zh:
+        if intent == 'introduction':
+            use = ('我有'+linked+'的实践经历，希望把这些经验用于这个岗位。' if zh else
+                   f'My background includes hands-on work in {linked}, which I would bring to this role.')
+        elif intent == 'motivation' and zh:
             use = '岗位中的'+linked+'吸引我，因为我做过相关实践。'
         elif intent == 'motivation':
             use = f'I am drawn to work on {linked} because it builds on my previous experience.'
@@ -255,7 +292,8 @@ def statement_fallback(language, intent, duties, evidence, limit):
 
 def assemble_statement(job, data, resume, workers, settings):
     options = data.statement
-    intent, question_topics = question_focus(options.question.strip(),options.language)
+    intent, question_topics, requested_facts = question_focus(options.question.strip(),options.language)
+    confirmed, missing = statement_facts(data, requested_facts, options.language)
     language, role, target, evidence = select_evidence(
         job, resume, language=options.language, question_topics=question_topics, allow_transferable=True,
     )
@@ -264,14 +302,25 @@ def assemble_statement(job, data, resume, workers, settings):
     payload.update(kind='statement', duties=duties, question_intent=intent, question_topics=question_topics,
                    limit=options.limit)
     if intent in {'manual','eligibility'}:
-        narrative, reason = None, 'question_needs_input'
+        narrative, reason = None, 'question_needs_input' if missing or intent == 'manual' else None
     else:
         narrative, reason = generate_narrative(job, data, resume, workers, settings, payload)
     answer = narrative.body if narrative else statement_fallback(language,intent,duties,evidence,options.limit)
+    if missing and intent == 'eligibility':
+        answer = ('请补充'+'、'.join(missing)+'。' if language == 'zh'
+                  else 'Please confirm your '+', '.join(missing)+'.')
+        if options.limit is not None and statement_length(answer, language) > options.limit:
+            answer = statement_fallback(language, intent, duties, evidence, options.limit)
+    if confirmed:
+        facts_text = ('；' if language == 'zh' else '; ').join(confirmed)+('。' if language == 'zh' else '.')
+        combined = facts_text if intent == 'eligibility' and not missing else answer+'\n\n'+facts_text
+        if options.limit is None or statement_length(combined, language) <= options.limit:
+            answer = combined
     if narrative:
         evidence = [item for item in evidence if item['id'] in narrative.evidence_ids]
     else:
         evidence = [item for item in evidence if any(term.casefold() in answer.casefold() for term in item['topics'])]
-    return {'mode':'Workers AI 草稿' if narrative else '基础草稿','fallback_reason':reason,
+    return {'mode':'Workers AI 草稿' if narrative else '待补充' if reason == 'question_needs_input' else '基础草稿',
+            'fallback_reason':reason, 'missing_facts':missing, 'confirmed_facts':confirmed,
             'answer':answer,'language':language,'limit':options.limit,
             'length':statement_length(answer,language),'evidence':evidence,'duties':duties}

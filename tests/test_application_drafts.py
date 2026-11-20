@@ -318,3 +318,42 @@ def test_application_url_preserves_job_query_and_anchor():
     assert JobCandidate(application_url=url).application_url==url
     assert JobCandidate(application_url='javascript:alert(1)').application_url is None
     assert JobCandidate(application_url='https://not-a-job@example.org/apply').application_url is None
+
+
+
+def test_ops_statement_answers_introduction_and_identifies_only_missing_facts(tmp_path, monkeypatch):
+    from app.workers_drafts import WorkersDrafts
+
+    requests = []
+
+    def worker(request):
+        data = json.loads(json.loads(request.content)['messages'][1]['content'])
+        requests.append(data)
+        body = ('我有 Linux 服务部署和故障排查的经验。' if data['language']=='zh'
+                else 'I have hands-on Linux deployment experience and can apply it to this role.')
+        return httpx.Response(200, json={'choices':[{'message':{'content':json.dumps({
+            'body':body,'evidence_ids':['E1'],
+        })}}]})
+
+    monkeypatch.setattr(WorkersDrafts, 'transport', httpx.MockTransport(worker))
+    job = {'source':'himalayas','title':'Linux Operations Engineer',
+           'jd':'部署和维护 Linux 服务器，日常监控与故障排查。'}
+    profile = '## 工作经历\n负责 Linux 服务器巡检、故障排查，部署和维护云平台服务。'
+    with TestClient(create_app(configured(tmp_path))) as client:
+        rid = upload(client, profile)
+        intro = {'language':'zh','question':'请你介绍一下你自己'}
+        blank = draft(client,rid,job,statement={'language':'zh'})
+        chinese = draft(client,rid,job,statement=intro)
+        english = draft(client,rid,job,statement={'language':'en','question':'Why are you a good fit for this role?'})
+        assert all(item['mode']=='Workers AI 草稿' and item['evidence'] for item in (blank,chinese,english))
+        assert [call['question_intent'] for call in requests] == ['fit','introduction','fit']
+        assert draft(client,rid,job,statement=intro) == chinese and len(requests)==3
+        mixed = draft(client,rid,job,statement={**intro,'question':'请作自我介绍，并说明期望薪资和到岗日期。'})
+        assert mixed['mode']=='Workers AI 草稿' and 'Linux' in mixed['answer']
+        assert mixed['missing_facts']==['期望薪资','到岗日期']
+        pending = draft(client,rid,job,statement={**intro,'question':'你需要签证吗？'})
+        assert pending['mode']=='待补充' and pending['missing_facts']==['签证或工作资格'] and len(requests)==4
+        confirmed = draft(client,rid,job,statement={**intro,'question':'什么时候能到岗？'},available_from='2027-01-04')
+        assert '2027-01-04' in confirmed['answer'] and not confirmed['missing_facts'] and len(requests)==4
+        limited = draft(client,rid,job,statement={**intro,'limit':10})
+        assert limited['fallback_reason']=='invalid_output' and limited['length']<=10

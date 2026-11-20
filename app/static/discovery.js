@@ -9,6 +9,7 @@
         ? '当前运行的后端没有 Offer岛接口，请重新启动工作台。'
         : '操作失败，请检查输入后重试。'));
       error.status = response.status;
+      error.code = data.error?.code;
       error.retryAfter = Number(response.headers.get('Retry-After')) || 0;
       throw error;
     }
@@ -37,6 +38,7 @@
   let detailMotion, lastDetailSnapshot;
   let offerPreview = false, offerSupported;
   let manualOfferQuery = false, manualOfferType = false;
+  let resumeSearchTerms = [], preferredSearchTerms = [];
   const browsingOffers = () => offerPreview;
   const offerSource = () => get('discovery-mode').value === 'online' && get('discovery-platform').value === 'offerdao';
 
@@ -321,6 +323,7 @@
     get('discovery-settings').hidden = false;
     get('discovery-platform').value = 'offerdao';
     setMode('online');
+    showOfferSourceState();
     openWorkspace();
     expandSearch(true);
     get('offerdao-query').focus();
@@ -356,7 +359,16 @@
       resumeVersion = result.resume_version;
       resumeName = resume.name;
       resumeKind = kind;
-      if (changed) applicationDrafts.clear();
+      const saved = readSearchDraft();
+      if (changed) {
+        applicationDrafts.clear();
+        manualOfferQuery = manualOfferType = false;
+        get('offerdao-query').value = '';
+        get('offerdao-type').value = '';
+        get('offerdao-city').value = '';
+      }
+      resumeSearchTerms = result.suggestions.map(item=>item.term);
+      preferredSearchTerms = result.preferred_terms || [];
       if (crossingExample) {
         invalidateOffers();
         clearTimeout(pollTimer);
@@ -373,39 +385,43 @@
         get('discovery-status').textContent = '请选择搜索条件后开始搜索。';
       }
       if (changed && !restoring && !keepRanking) {
-        sessionStorage.removeItem(searchDraftKey());
-        const currentPage = offerSource() ? offerPage : null;
+        const source = get('discovery-platform').value;
+        sourceRevision++;
         invalidateOffers();
-        if (currentPage) {
-          offerPage = currentPage;
-          renderOfferPage(currentPage, 'complete');
-          rankOfferPage(currentPage);
-        } else {
-          const query = get('offerdao-query');
-          const type = get('offerdao-type');
-          const values = [query.value,type.value];
-          get('discovery-task-form').reset();
-          if (manualOfferQuery) query.value = values[0];
-          if (manualOfferType) type.value = values[1];
-          setMode('online');
-        }
+        clearTimeout(pollTimer);
+        clearTimeout(agentTimer);
+        taskId = agentId = null;
+        sessionStorage.removeItem('discovery-task');
+        sessionStorage.removeItem('discovery-agent');
+        showOfferPanel(false);
+        resetResultPane();
+        get('agent-trace').hidden = true;
+        get('discovery-round').hidden = true;
+        get('discovery-status').textContent = '请选择搜索条件后开始搜索。';
+        get('discovery-task-form').reset();
+        get('discovery-platform').value = source;
+        get('discovery-mode').value = 'online';
       }
-      if (!keepRanking) {
+      if (changed && keepRanking && offerPage) {
+        offerPage = null;
+        updateOfferPagination(null);
+        get('offerdao-return').hidden = true;
+      }
+      if (changed || !keepRanking) {
         get('discovery-terms').replaceChildren();
         get('discovery-add').disabled = false;
+        const terms = saved?.terms || resumeSearchTerms;
+        (terms.length ? terms : ['']).forEach(addTerm);
       }
-      const saved = restoring ? readSearchDraft() : null;
-      if (!keepRanking) {
-        (saved?.terms || result.suggestions.map(item=>item.term)).forEach(addTerm);
-        if (!result.suggestions.length) addTerm();
-      }
-      if (saved) {
-        manualOfferQuery = saved.manualOfferQuery ?? Boolean(saved.fields['offerdao-query']);
-        manualOfferType = saved.manualOfferType ?? Boolean(saved.fields['offerdao-type']);
-        setMode(['import','paste'].includes(saved.mode) ? 'online' : saved.mode);
+      if (saved && (restoring || changed)) {
+        manualOfferQuery = saved.manualOfferQuery === true;
+        manualOfferType = saved.manualOfferType === true;
         for (const [id,value] of Object.entries(saved.fields)) {
           if (draftFields.includes(id)) get(id).value = value;
         }
+        if (!manualOfferQuery) get('offerdao-query').value = '';
+        if (!manualOfferType) get('offerdao-type').value = '';
+        get('discovery-mode').value = ['import','paste'].includes(saved.mode) ? 'online' : saved.mode;
       }
       const roles = get('occupation-directions');
       roles.replaceChildren(...result.suggestions.map(item=>el('li', [item.kind, item.term,
@@ -435,6 +451,7 @@
         sessionStorage.setItem(personalResumeKey, JSON.stringify(ref));
       }
       setMode(get('discovery-mode').value);
+      if (!keepRanking && offerSource() && !taskId && !offerPage) showOfferSourceState();
       if (keepRanking) renderJobs();
       updateResumeStatus();
       if (!restoring) openWorkspace(!inline, trigger);
@@ -580,15 +597,16 @@
   const draftFields = ['discovery-platform','offerdao-query','offerdao-city','offerdao-type','discovery-job-type','discovery-country','discovery-city','discovery-limit',
     'discovery-months','discovery-available','discovery-days','discovery-graduation','discovery-degree'];
   const searchDraftKey = () => resumeKind === 'example' ? 'discovery-example-search-draft' : 'discovery-search-draft';
+  const profileSearchDraftKey = () => [searchDraftKey(),resumeId,resumeVersion].join(':');
   function readSearchDraft() {
     try {
-      const draft = JSON.parse(sessionStorage.getItem(searchDraftKey()));
+      const draft = JSON.parse(sessionStorage.getItem(profileSearchDraftKey()) || sessionStorage.getItem(searchDraftKey()));
       return draft?.id === resumeId && draft.version === resumeVersion ? draft : null;
     } catch { return null; }
   }
   function saveSearchDraft() {
     if (!resumeId || resumeBusy) return;
-    sessionStorage.setItem(searchDraftKey(), JSON.stringify({
+    sessionStorage.setItem(profileSearchDraftKey(), JSON.stringify({
       id:resumeId, version:resumeVersion, mode:get('discovery-mode').value,
       manualOfferQuery, manualOfferType,
       terms:[...get('discovery-terms').querySelectorAll('input')].map(input=>input.value),
@@ -597,16 +615,33 @@
   }
   get('discovery-task-form').addEventListener('input', saveSearchDraft);
   get('discovery-add').onclick = () => { addTerm(); saveSearchDraft(); };
+  function offerKeyword(term) {
+    const broadKeywords = [
+      [/\bdevops\b|自动化运维/i,'DevOps'],
+      [/\bsre\b|站点可靠性/i,'SRE'],
+      [/云平台|Cloud Operations/i,'云平台'],
+      [/运维|Linux Systems|系统管理员/i,'运维'],
+      [/\bagents?\b|智能体/i,'Agent'],
+      [/大模型|\bllms?\b|生成式\s*AI/i,'大模型'],
+    ];
+    const matching = broadKeywords.find(([pattern])=>pattern.test(term));
+    return matching?.[1] || term.trim().replace(/(?:实习生?|\bintern(?:ship)?)$/i,'')
+      .replace(/(?:工程师|开发人员|专员|经理|顾问)$/,'').trim();
+  }
   function recommendOfferQuery() {
-    const input = get('offerdao-query');
-    const type = get('offerdao-type');
-    if (input.value || manualOfferQuery) return;
-    const term = get('discovery-terms').querySelector('input')?.value.trim();
+    if (manualOfferQuery) return;
+    const preferred = new Set(preferredSearchTerms.map(term=>key(offerKeyword(term))));
+    const term = resumeSearchTerms.find(term => preferred.has(key(offerKeyword(term)))) || resumeSearchTerms[0];
     if (!term) return;
-    if (/(?:实习|\bintern(?:ship)?\b)/i.test(term) && !type.value && !manualOfferType) type.value = '实习';
-    if (/\bagents?\b|智能体/i.test(term)) input.value = 'Agent';
-    else if (/大模型|\bllms?\b|生成式\s*AI/i.test(term)) input.value = '大模型';
-    else input.value = term.replace(/(?:实习生?|intern(?:ship)?)$/i,'').trim();
+    const internship = /(?:实习|\bintern(?:ship)?\b)/i.test(term);
+    if (!manualOfferType) get('offerdao-type').value = internship ? '实习' : '';
+    get('offerdao-query').value = offerKeyword(term);
+  }
+
+  const unavailableOffer = () => offerSupported === false || offerReady === false;
+  function offerUnavailableMessage() {
+    return offerSupported === false ? '当前运行的后端没有 Offer岛接口，请重新启动工作台。'
+      : 'Offer岛来源当前不可用，尚未配置个人 API Key（OFFERDAO_API_KEY）。可切换来源或粘贴 JD。';
   }
 
   function setMode(mode) {
@@ -617,7 +652,7 @@
     if (!offer && (browsingOffers() || offerPage)) {
       invalidateOffers();
       showOfferPanel(false);
-      batch = null;
+      resetResultPane();
       get('discovery-status').textContent = '请选择搜索条件后开始搜索。';
       get('discovery-attribution').hidden = true;
     }
@@ -663,7 +698,7 @@
     }
   }
 
-  function renderOfferPage(page, stage, message) {
+  function renderOfferPage(page, stage, message, failure) {
     showOfferPanel(true);
     get('agent-trace').hidden = true;
     selectedJob = null;
@@ -671,7 +706,7 @@
     get('filter-unknown').checked = false;
     const jobs = (page?.jobs || []).map(job => ({...job, local_job_id:job.source_id, matched_terms:[]}));
     batch = {
-      platform:'offerdao', mode:'online', stage, jobs, terms:[], counts:{},
+      platform:'offerdao', mode:'online', stage, jobs, terms:[], counts:{}, failure,
       message:message || (jobs.length ? '来源共 '+page.total+' 张卡片 · 本页 '+jobs.length+' 个岗位'
         : '本页无符合条件的岗位。可缩短关键词或放宽条件后重新搜索。'),
     };
@@ -752,11 +787,12 @@
     taskId = agentId = null;
     sessionStorage.removeItem('discovery-task');
     sessionStorage.removeItem('discovery-agent');
-    if (offerSupported === false || offerReady === false || Date.now() < offerRetryAt) {
-      const message = offerSupported === false ? '当前运行的后端没有 Offer岛接口，请重新启动工作台。'
-        : offerReady === false ? 'Offer岛尚未配置个人 API Key（OFFERDAO_API_KEY）。可切换来源或粘贴 JD。'
-        : 'Offer岛查询受限，请在 '+Math.ceil((offerRetryAt-Date.now())/1000)+' 秒后手动重试。';
-      renderOfferPage(null, 'failed', message);
+    if (unavailableOffer()) {
+      renderOfferPage(null,'failed',offerUnavailableMessage(),'unavailable');
+      return;
+    }
+    if (Date.now() < offerRetryAt) {
+      renderOfferPage(null,'failed','Offer岛查询受限，请在 '+Math.ceil((offerRetryAt-Date.now())/1000)+' 秒后手动重试。','rate');
       return;
     }
     const limit = offset ? offerPage?.limit : 12;
@@ -786,7 +822,9 @@
       if (revision !== offerRevision) return;
       offerPage = null;
       if (problem.status === 429) offerRetryAt = Date.now()+1000*problem.retryAfter;
-      renderOfferPage(null, 'failed', problem.message+' 可切换来源或粘贴 JD。');
+      const failure = ['OFFERDAO_NOT_CONFIGURED','OFFERDAO_AUTH','OFFERDAO_FORBIDDEN'].includes(problem.code)
+        ? 'unavailable' : problem.status === 429 ? 'rate' : 'request';
+      renderOfferPage(null, 'failed', problem.message+' 可切换来源或粘贴 JD。', failure);
     } finally {
       if (revision === offerRevision) offerAbort = null;
     }
@@ -808,8 +846,14 @@
     taskId = agentId = null;
     sessionStorage.removeItem('discovery-task');
     sessionStorage.removeItem('discovery-agent');
+    resetResultPane();
+    get('agent-trace').hidden = true;
     setMode('online');
-    if (offerSource()) renderOfferPage(null,'idle','请按当前条件搜索。');
+    if (offerSource()) showOfferSourceState();
+    else {
+      get('discovery-round').hidden = true;
+      get('discovery-status').textContent = '请选择搜索条件后开始搜索。';
+    }
     saveSearchDraft();
   };
   get('offerdao-query').addEventListener('input', () => { manualOfferQuery = true; });
@@ -818,11 +862,18 @@
     'discovery-months','discovery-available','discovery-days','discovery-graduation']) {
     get(id).addEventListener('input', () => { if (offerSource()) invalidateOffers(); });
   }
+  function showOfferSourceState() {
+    if (unavailableOffer()) renderOfferPage(null,'failed',offerUnavailableMessage(),'unavailable');
+    else renderOfferPage(null,'idle','请按当前条件搜索。');
+  }
   api('/api/discovery/sources').then(data => {
     const source = data.sources.find(item=>item.id==='offerdao');
     offerSupported = Boolean(source);
     offerReady = source?.ready;
-    if (offerSource()) setMode('online');
+    if (offerSource()) {
+      setMode('online');
+      if (unavailableOffer() && !offerPage && !offerAbort) showOfferSourceState();
+    }
   }).catch(()=>{});
 
   get('discovery-import').onclick = () => setMode('import');
@@ -1065,7 +1116,8 @@
     copy.type = apply.type = 'button';
     const controls = el('div',undefined,'actions');
     controls.append(copy,apply);
-    output.append(stateLabel,label('申请陈述',body),stats,basis,controls);
+    const facts = el('p',undefined,'muted');
+    output.append(stateLabel,label('申请陈述',body),stats,basis,facts,controls);
     form.append(label('语言',language),label('招聘方问题（选填）',question),limitLabel,submit,status,output);
     panel.append(el('h4','投递方式'),actions,form);
     const slots = new Map();
@@ -1097,6 +1149,8 @@
         '简历第 '+item.line+' 行'+(item.transferable ? '（可迁移）' : '')+' · '+item.topics.join('、'));
       const duties = slot.draft.duties.map(terms => terms.join('、'));
       basis.textContent = [duties.length ? '岗位职责 · '+duties.join('；') : '', ...evidence].filter(Boolean).join(' ｜ ');
+      facts.textContent = slot.draft.missing_facts?.length ? '待补充 · '+slot.draft.missing_facts.join('、') : '';
+      facts.hidden = !facts.textContent;
       apply.hidden = !slot.proposal;
     }
     toggle.onclick = () => {
@@ -1144,7 +1198,7 @@
       const selectedResume = resumeId;
       const selectedVersion = resumeVersion;
       const refresh = Boolean(slot.draft);
-      const request = {resume_id:selectedResume,application_job:job,statement:options()};
+      const request = {resume_id:selectedResume,application_job:job,statement:options(),...availability()};
       const sameResume = () => resumeId === selectedResume && resumeVersion === selectedVersion;
       const show = () => { if (sameResume() && key() === chosen) render(); };
       slots.set(chosen,slot);
@@ -1386,7 +1440,7 @@
     const type = get('offerdao-type');
     const employment = type.value || (/(?:实习|\bintern(?:ship)?\b)/i.test(current) ? '实习' : '');
     const actions = el('div',undefined,'actions');
-    for (const keyword of ['大模型','Agent']) {
+    for (const keyword of [...new Set([offerKeyword(current), ...resumeSearchTerms.map(offerKeyword)])].filter(term=>term.length >= 2).slice(0,3)) {
       if (keyword.toLowerCase() === current.toLowerCase() && employment === type.value) continue;
       const adjust = el('button','试搜「'+keyword+'」'+(employment ? ' · '+employment : ''),'secondary');
       adjust.type = 'button';
@@ -1428,7 +1482,8 @@
     if (!jobs.length) {
       get('discovery-detail').hidden = true;
       area.append(el('p',batch.jobs.length ? '没有符合当前筛选条件的岗位。' :
-        batch.stage === 'failed' ? '本轮没有可显示的岗位。请查看上方失败原因。' :
+        batch.stage === 'failed' ? (offerPreview ? '查询未完成。可切换来源或通过「更多方式 → 粘贴 JD」继续分析。'
+          : '本轮没有可显示的岗位。请查看上方失败原因。') :
         terminal(batch.stage) ? '本轮没有匹配岗位。可调整搜索词或城市。' : batch.stage === 'idle' ? '等待搜索。' : '等待后台获取岗位。','empty'));
       if (offerPreview && batch.platform === 'offerdao' && batch.stage === 'complete' && !batch.jobs.length && offerPage) {
         area.append(offerAdjustments());
@@ -1505,7 +1560,9 @@
     const sourceHint = batch.mode === 'online' && batch.error && !jobs.length
       ? ' · 可在岗位原页复制正文，通过「更多方式 → 粘贴 JD」分析。'
       : '';
-    get('discovery-result-title').textContent = '岗位结果 '+jobs.length;
+    get('discovery-result-title').textContent = offerPreview && stage !== 'complete'
+      ? (stage === 'failed' ? (batch.failure === 'unavailable' ? 'Offer岛来源不可用' : 'Offer岛查询未完成') : 'Offer岛岗位')
+      : '岗位结果 '+jobs.length;
     get('discovery-round').hidden = offerPreview;
     get('discovery-status').textContent = offerPreview ? batch.message : (agentId ? 'Agent · ' : '')+(batch.reused_candidates ? '使用新简历重评原岗位 · 筛选词来自原搜索 · ' : '')+
       (offer ? 'Offer岛 · '+pageProgress : batch.mode === 'online' ? '' : modeNames[batch.mode]+' · ')+ (stages[stage] || ({running:'正在执行', waiting:'等待回答', interrupted:'本轮中断'}[stage] || stage))+current+(batch.error?' · '+batch.error:'')+sourceHint;
@@ -1860,9 +1917,13 @@
         const options = result.query_conditions;
         offerPage = {jobs:result.jobs, total:options.source_total, offset:options.source_offset, limit:options.source_limit};
         get('discovery-platform').value = 'offerdao';
-        get('offerdao-query').value = options.source_query || result.terms[0] || '';
-        get('offerdao-city').value = options.city || '';
-        get('offerdao-type').value = options.source_employment_type || (options.job_type === 'internship' ? '实习' : '');
+        if (!readSearchDraft()) {
+          get('offerdao-query').value = options.source_query || result.terms[0] || '';
+          get('offerdao-city').value = options.city || '';
+          get('offerdao-type').value = options.source_employment_type || (options.job_type === 'internship' ? '实习' : '');
+          manualOfferQuery = Boolean(get('offerdao-query').value);
+          manualOfferType = Boolean(get('offerdao-type').value);
+        }
         setMode('online');
         updateOfferPagination(offerPage);
       }

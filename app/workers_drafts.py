@@ -64,10 +64,21 @@ class WorkersDrafts:
         self.client.close()
 
     @property
+    def configuration_status(self):
+        if not self.account or not self.token:
+            return 'missing_credentials'
+        if not re.fullmatch(r'[0-9a-fA-F]{32}', self.account):
+            return 'invalid_account'
+        # An embedded line break or a pasted cURL command is not an HTTP bearer token.
+        if not re.fullmatch(r'[A-Za-z0-9._~+/-]+=*', self.token.get_secret_value().strip()):
+            return 'invalid_token'
+        if not re.fullmatch(r'@cf/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+', self.model):
+            return 'invalid_model'
+        return 'ready'
+
+    @property
     def configured(self):
-        return bool(re.fullmatch(r'[0-9a-fA-F]{32}', self.account)
-                    and self.token and self.token.get_secret_value().strip()
-                    and re.fullmatch(r'@cf/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+', self.model))
+        return self.configuration_status == 'ready'
 
     def _roll_day(self):
         today = datetime.now(timezone.utc).date()
@@ -81,7 +92,7 @@ class WorkersDrafts:
             self._roll_day()
             fields = ('attempts', 'succeeded', 'failed', 'input_tokens', 'output_tokens',
                       'usage_reported', 'upstream_ms', 'agent_attempts', 'agent_succeeded')
-            return {'day_utc':self.day.isoformat(), 'configured':self.configured,
+            return {'day_utc':self.day.isoformat(), 'configured':self.configured, 'configuration_status':self.configuration_status,
                     'public_hourly_limit':self.public_hourly, 'daily_limit':self.daily_limit,
                     'last_http_error':self.last_http_error,
                     **{name:self.stats[name] for name in fields}}

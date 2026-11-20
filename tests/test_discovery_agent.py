@@ -163,3 +163,20 @@ def test_public_workers_agent_observes_jd_and_shares_request_budget(tmp_path, mo
         assert '本站今日' in fallback['events'][0]['summary']
         usage = client.get('/health').json()['draft_usage']
         assert usage['attempts'] == usage['agent_attempts'] == usage['agent_succeeded'] == 6
+
+
+
+def test_workers_credentials_with_embedded_newline_are_rejected_before_request(tmp_path):
+    from app.workers_drafts import WorkersDrafts
+
+    settings = Settings(data_dir=tmp_path, public_mode=True,
+                        cloudflare_account_id='a'*32, cloudflare_api_token='test'+chr(10)+'token')
+    workers = WorkersDrafts(settings)
+    try:
+        assert workers.usage()['configuration_status'] == 'invalid_token'
+        assert not workers.configured and not workers.agent_enabled
+        assert workers.choose_action({}, '', Action, scope=tmp_path, public=True, timeout=2) == (
+            None, 'not_configured', False)
+        assert workers.usage()['attempts'] == 0
+    finally:
+        workers.close()

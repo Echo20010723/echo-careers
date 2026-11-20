@@ -143,7 +143,7 @@ class WorkersDrafts:
         result, usage = (None, 'provider_error'), None
         try:
             result, usage = self._request(payload, instructions, schema=schema,
-                                          timeout=timeout, max_tokens=256)
+                                          timeout=timeout, max_tokens=384)
         finally:
             with self.lock:
                 self._record(day, started, result, usage, agent=True)
@@ -203,14 +203,16 @@ class WorkersDrafts:
             if timeout is not None:
                 wait = min(timeout, self.client.timeout.read)
                 request_options['timeout'] = httpx.Timeout(wait, connect=min(2.0, wait))
-            response = self.client.post(endpoint,
-                **request_options,
-                headers={'Authorization':'Bearer '+self.token.get_secret_value().strip()},
-                json={'model':self.model, 'messages':[
+            body = {'model':self.model, 'messages':[
                     {'role':'system','content':instructions},
                     {'role':'user','content':json.dumps(payload, ensure_ascii=False)},
-                ], 'max_completion_tokens':max_tokens, 'reasoning_effort':'low', 'temperature':0.2,
-                    'response_format':{'type':'json_object'}, 'stream':False, 'store':False})
+            ], 'max_completion_tokens':max_tokens, 'temperature':0.2,
+                    'response_format':{'type':'json_object'}, 'stream':False, 'store':False}
+            if self.model == '@cf/qwen/qwen3.8-27b':
+                body['reasoning_effort'] = 'low'
+                body['chat_template_kwargs'] = {'enable_thinking':False}
+            response = self.client.post(endpoint, **request_options, json=body,
+                headers={'Authorization':'Bearer '+self.token.get_secret_value().strip()})
             if response.status_code in {402, 429}:
                 hint = response.headers.get('Retry-After', '')
                 delay = min(900, int(hint)) if hint.isascii() and hint.isdigit() and len(hint) <= 6 else 60
@@ -238,7 +240,7 @@ class WorkersDrafts:
                 if all(type(n) is int and n >= 0 for n in counts):
                     usage = counts
             choice = envelope['choices'][0]
-            if choice.get('finish_reason') not in {None, 'stop'}:
+            if choice.get('finish_reason') not in {None, 'stop', 'length'}:
                 return (None, 'invalid_output'), usage
             result = schema.model_validate_json(choice['message']['content'])
             if schema is Narrative and not supported(result, payload):

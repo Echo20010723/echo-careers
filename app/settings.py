@@ -27,7 +27,7 @@ class Settings(BaseModel):
     cloudflare_api_token: SecretStr | None = None
     cloudflare_agent_enabled: bool | None = None
     cloudflare_model: str = '@cf/qwen/qwen3.8-27b'
-    cloudflare_timeout: float = Field(9, ge=1, le=20)
+    cloudflare_timeout: float = Field(16, ge=1, le=20)
     cloudflare_daily_drafts: int = Field(100, ge=1, le=200)
     cloudflare_visitor_hourly_drafts: int = Field(12, ge=1, le=100)
     cloudflare_local_hourly_drafts: int = Field(30, ge=1, le=200)

@@ -129,6 +129,7 @@ def test_public_workers_agent_observes_jd_and_shares_request_budget(tmp_path, mo
         payload = json.loads(request.content)
         assert payload['model'] == '@cf/qwen/qwen3.8-27b'
         assert payload['store'] is False
+        assert payload['chat_template_kwargs'] == {'enable_thinking':False}
         contexts.append(json.loads(payload['messages'][1]['content']))
         action, argument = next(actions)
         return Response(200, json={'choices':[{'finish_reason':'stop', 'message':{

@@ -1,23 +1,43 @@
 """Opt-in question history, scoped to the current workbench database."""
+from datetime import date
+from uuid import UUID
+from typing import Literal
 import json
 import re
 
 from pydantic import BaseModel, Field
 
+from .application_draft import assemble_application, assemble_statement
+from .discovery_models import JobCandidate, valid_recruiting_email
 from .errors import AppError
 from .policy import handoff_reason, safe_example, unknown_fact, unsafe_instruction, validate_reply
 from .store import dumps, uid
 
 
+class StatementInput(BaseModel):
+    language: Literal['en','zh'] = 'en'
+    question: str = Field('', max_length=800)
+    limit: int | None = Field(None, ge=1, le=500, strict=True)
+
+
 class DraftInput(BaseModel):
     resume_id: str = Field(min_length=1, max_length=100)
-    question: str = Field(min_length=1, max_length=1500)
+    question: str | None = Field(None, min_length=1, max_length=1500)
+    application_job: JobCandidate | None = None
+    statement: StatementInput | None = None
+    preview: bool = False
+    regeneration_id: UUID | None = None
+    available_from: date | None = None
+    weekly_days: int | None = Field(None, ge=1, le=7)
+    internship_months: int | None = Field(None, ge=1, le=36)
+    signature: str | None = Field(None, max_length=80, pattern=r'^[^\x00-\x1f\x7f]*$')
+    recipient: str | None = Field(None, max_length=254)
     job_title: str = Field(default='', max_length=300)
 
 
 class DiscoveryDrafts:
-    def __init__(self, service):
-        self.service, self.store = service, service.store
+    def __init__(self, service, workers):
+        self.service, self.store, self.workers = service, service.store, workers
         with self.store.tx() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS discovery_drafts(
                 id TEXT PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL,
@@ -27,7 +47,21 @@ class DiscoveryDrafts:
         resume = self.store.one('SELECT id,name,version,text,chunks FROM resumes WHERE id=?', (data.resume_id,))
         if not resume:
             raise AppError('RESUME_NOT_FOUND')
+        if data.statement:
+            if not data.application_job or data.application_job.source != 'himalayas':
+                raise AppError('INVALID_INPUT', '请选择 Himalayas 岗位后生成申请陈述。')
+            return assemble_statement(data.application_job, data, resume, self.workers, self.service.settings)
         resume['chunks'] = json.loads(resume['chunks'])
+        if data.application_job:
+            job = data.application_job
+            if data.recipient:
+                address = data.recipient.strip()
+                if not valid_recruiting_email(address) or (job.contact_emails and address not in job.contact_emails):
+                    raise AppError('INVALID_INPUT', '请核对收件人地址。')
+                job = job.model_copy(update={'contact_emails':[address]})
+            return assemble_application(job, data, resume, self.workers, self.service.settings)
+        if not data.question:
+            raise AppError('INVALID_INPUT', '请填写招聘方的问题。')
         found = self.service.rag.search(data.question, resume)
         facts = found['facts']
         terms = set(re.findall(r'[a-z][a-z0-9+#]+|[\u4e00-\u9fff]{2}', data.question.lower()))

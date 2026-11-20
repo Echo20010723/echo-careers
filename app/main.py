@@ -2,32 +2,39 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 import asyncio,json,re,time,os
+from typing import Annotated
 from fastapi import FastAPI,UploadFile,File,Query,Request
 from fastapi.responses import JSONResponse,FileResponse,Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from .settings import Settings
+from .runtime import runtime_revision
 from .service import Service
 from .schemas import JobBatch,ConversationInput,MessageInput,ModeInput,TaskInput,Preferences,AssistantStartInput,JobInput,BrowserPairInput,BrowserImportInput,BossNativeEvent
 from .errors import AppError
+from .offerdao import LABEL as OFFERDAO_LABEL, OfferDAO, OfferLimit, OfferSearch
 from .discovery import Discovery
 from .discovery_agent import AgentInput, Answer, DiscoveryAgent
 from .discovery_drafts import DiscoveryDrafts, DraftInput
+from .workers_drafts import WorkersDrafts
 from .discovery_models import DiscoveryRequest, PasteResume, ReanalysisRequest
 from .applications import ApplicationUpdate, save_application, review_report
 from .audit import REQUEST_ID
 from .browser_share import valid_origin
 
 
-def create_app(settings=None, *, _public_scope=False):
+def create_app(settings=None, *, _public_scope=False, _offerdao=None, _workers_drafts=None):
     settings=settings or Settings.load()
+    offerdao = _offerdao if _offerdao is not None else OfferDAO(settings.offerdao_base, settings.offerdao_api_key)
+    workers_drafts = _workers_drafts if _workers_drafts is not None else WorkersDrafts(settings)
     if settings.public_mode and not _public_scope:
         from .public import create_public_app
-        return create_public_app(settings, create_app)
+        return create_public_app(settings, create_app, offerdao, workers_drafts)
+    revision = runtime_revision(settings.root) if not _public_scope else None
     service=Service(settings)
     discovery=Discovery(service)
-    agent=DiscoveryAgent(service, discovery)
-    discovery_drafts=DiscoveryDrafts(service)
+    agent=DiscoveryAgent(service, discovery, workers_drafts)
+    discovery_drafts=DiscoveryDrafts(service, workers_drafts)
     discovery_ready=asyncio.Event()
     progress_changed=asyncio.Event()
 
@@ -83,6 +90,9 @@ def create_app(settings=None, *, _public_scope=False):
         try: await runner
         except asyncio.CancelledError: pass
         await asyncio.to_thread(service.close)
+        if not _public_scope:
+            await offerdao.close()
+            await asyncio.to_thread(workers_drafts.close)
     app=FastAPI(title='Echo Careers',version='1.4.0',lifespan=lifespan)
     app.state.service=service
     @app.middleware('http')
@@ -119,7 +129,11 @@ def create_app(settings=None, *, _public_scope=False):
     @app.exception_handler(RequestValidationError)
     async def invalid(request,e): return JSONResponse({'error':{'code':'INVALID_INPUT','message':'输入内容或字段格式不正确。','request_id':request.state.request_id}},status_code=422)
     @app.get('/health')
-    def health(): return {'status':'ok','app':'career-workbench','version':'1.4.0','pid':os.getpid(),'model_mode':settings.model_mode,'simulated_model':service.provider.simulated,'schema_version':1}
+    def health():
+        return {'status':'ok','app':'career-workbench','version':'1.4.0','pid':os.getpid(),
+                'model_mode':settings.model_mode,'simulated_model':service.provider.simulated,'schema_version':1,
+                'runtime_revision':revision,'offerdao_ready':offerdao.ready,'draft_usage':workers_drafts.usage(),
+                'agent_provider':agent.model_provider()}
     @app.get('/api/state')
     def state(): return service.snapshot()
     @app.get('/api/resumes/{rid}')
@@ -174,7 +188,21 @@ def create_app(settings=None, *, _public_scope=False):
 
     @app.get('/api/discovery/sources')
     def discovery_sources():
-        return discovery.source_status()
+        result = discovery.source_status()
+        result['sources'].append({'id':'offerdao','name':OFFERDAO_LABEL,'ready':offerdao.ready})
+        return result
+
+    @app.get('/api/discovery/offerdao/search')
+    async def search_offerdao(query: Annotated[OfferSearch, Query()]):
+        try:
+            result = await offerdao.search(query, service.audit)
+            if settings.public_mode:
+                result['jobs'] = [job.model_copy(update={'contact_emails':[]}) for job in result['jobs']]
+            return result
+        except OfferLimit as error:
+            headers = {'Retry-After':str(error.seconds)} if error.seconds is not None else {}
+            return JSONResponse({'error':{'code':error.code,'message':error.message,
+                                          'request_id':REQUEST_ID.get()}}, status_code=429, headers=headers)
 
     @app.post('/api/discovery/drafts')
     def create_discovery_draft(data: DraftInput):
@@ -226,8 +254,8 @@ def create_app(settings=None, *, _public_scope=False):
         return task
 
     @app.post('/api/discovery/tasks/{batch_id}/retry', status_code=202)
-    async def retry_discovery(batch_id: str):
-        task = await asyncio.to_thread(discovery.retry, batch_id)
+    async def retry_discovery(batch_id: str, job_id: str | None = Query(None, max_length=100)):
+        task = await asyncio.to_thread(discovery.retry, batch_id, job_id)
         discovery_ready.set()
         return task
 

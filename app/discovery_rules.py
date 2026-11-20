@@ -7,7 +7,7 @@ from .discovery_models import MatchExtraction, SearchSuggestions, job_identity, 
 from .policy import unsafe_instruction
 from .occupations import TECH, directions, duty_roles
 
-RULE_VERSION = 'discovery-6'
+RULE_VERSION = 'discovery-7'
 GRADES = ['夯', '顶级', '人上人', 'npc', '拉完了']
 SKILLS = (
     'Python', 'FastAPI', 'Flask', 'SQL', 'RAG', 'Agent', '工具调用', '工作流', '检索', '模型 API',
@@ -146,6 +146,22 @@ def select_candidates(rows, terms, limit, *, include_unmatched=False):
     return list(selected.values()), matched, len(groups)
 
 
+ACADEMIC = re.compile(r'\b(?:ph\.?\s*d\.?|doctorate|doctoral)\b|博士', re.I)
+PREFERRED = re.compile(r'preferred|nice to have|bonus|optional|优先|加分', re.I)
+NEGATED = re.compile(r'not required|not mandatory|非必需|无需|不要求', re.I)
+REQUIRED = re.compile(r'must|required|requirements|only|minimum|enrolled|必需|必须|仅限|只招|要求|候选人须', re.I)
+
+
+def doctoral_requirements(text):
+    sentences = re.split(r'[。；;\n]+|(?<=[!?])\s+|(?<=[a-z])\.\s+(?=[A-Z])', text)
+    mentions = [line.strip()[:280] for line in sentences if ACADEMIC.search(line)]
+    preferred = next((line for line in mentions if PREFERRED.search(line)), None)
+    required = next((line for line in mentions if REQUIRED.search(line) and not (
+        PREFERRED.search(line) or NEGATED.search(line) or re.search(r'硕士|master\b|指导|导师|mentor', line, re.I)
+    )), None)
+    return required, preferred
+
+
 def hard_conditions(job, request):
     jd = job.jd or job.jd_summary or ''
     full_time = re.search(r'仅.{0,4}全职|不接受实习|只招全职', jd) or (job.employment_type or '').casefold() in {'全职', 'full_time', 'full-time', 'full time'}
@@ -165,7 +181,7 @@ def hard_conditions(job, request):
             deadline = date.fromisoformat(start[1])
         except ValueError:
             pass
-    weeks = re.search(r'每周(?:至少|不少于|须出勤|出勤|到岗)?\s*([1-7一二三四五六七])\s*天', jd)
+    weeks = re.search(r'每周\s*(?:(?:须|需|要求|必须)\s*)?(?:出勤|到岗)?\s*(?:至少|不少于|不低于|最少)?\s*(?:出勤|到岗)?\s*([1-7一二三四五六七])\s*天', jd)
     days = None
     if weeks and re.search(r'至少|不少于|须出勤|出勤|到岗', weeks.group()):
         days = int(weeks[1]) if weeks[1].isascii() else '零一二三四五六七'.index(weeks[1])
@@ -173,7 +189,12 @@ def hard_conditions(job, request):
         r'(?:必须|须持|方可|持有).{0,24}(?:资格证|执业|注册证)|(?:must|required).{0,36}(?:licen[cs]e|registration)',part,re.I)
         and not re.search(r'优先|加分|preferred|optional',part,re.I)), None)
     cohort = re.search(r'(?:仅限|只招|限招|仅招)\s*(20\d{2})\s*届(?![、至/或和-])', jd)
-    return ([{'name':'执业资质','status':'待确认','evidence':credential,'question':'是否满足适用地区的执业资质？'}]
+    degree = getattr(request, 'degree', None)
+    doctoral, preferred = doctoral_requirements(jd)
+    education = [{'name':'学历', 'status':('符合' if degree == 'phd' else '冲突')
+                  if doctoral and degree else '待确认', 'evidence':doctoral or preferred,
+                  'question':'是否仅接受符合原文要求的博士申请者？'}] if doctoral else []
+    return education + ([{'name':'执业资质','status':'待确认','evidence':credential,'question':'是否满足适用地区的执业资质？'}]
             if credential else []) + [
         {'name':'每周出勤', 'status':('冲突' if request.weekly_days < days else '符合')
          if days and request.weekly_days else '待确认', 'evidence':weeks.group() if weeks else None,
@@ -197,45 +218,19 @@ def hard_conditions(job, request):
     ]
 
 
-def rank_batch(jobs):
+def rank_batch(jobs, *, sort=True):
     def by_rank_and_score(job):
         analysis = job['analysis'] or {}
         return analysis.get('rank', 9), -analysis.get('match_score', 0)
 
-    # Keep evidence-based assessments in the cache. Relative labels belong to this batch only.
-    jobs.sort(key=by_rank_and_score)
-    assessed = [job for job in jobs if job['analysis'] is not None]
-    total = len(assessed)
-    small_batch_slots = ((), (0,), (0, 2), (0, 2, 3), (0, 1, 2, 3))
-    if total >= len(GRADES):
-        edge = max(1, (total + 5) // 10)
-        shoulder = max(1, (total + 2) // 5)
-        forced_bottom = sum(job['analysis']['rank'] == 4 for job in assessed)
-        bottom = max(edge, forced_bottom)
-        top = min(edge, total - bottom)
-        upper = min(shoulder, total - bottom - top)
-        middle_and_lower = total - bottom - top - upper
-        lower = min(max(shoulder, bottom), middle_and_lower // 2)
-        targets = [top, upper, middle_and_lower - lower, lower, bottom]
-        slots = [rank for rank, count in enumerate(targets) for _ in range(count)]
-    else:
-        slots = small_batch_slots[total]
-
     counts = [0] * len(GRADES)
-    for position, job in enumerate(assessed):
-        analysis = job['analysis']
-        evidence_rank = analysis['rank']
-        # Sparse or weak evidence limits promotion. A confirmed mismatch always stays at the bottom.
-        # Thin evidence may enter the middle of a larger batch for manual review.
-        floor = 2 if total >= len(GRADES) and evidence_rank == 3 else evidence_rank
-        rank = max(slots[position], floor)
-        job['analysis'] = {
-            **analysis, 'evidence_rank': evidence_rank, 'evidence_grade': GRADES[evidence_rank],
-            'grade': GRADES[rank], 'rank': rank,
-        }
-        counts[rank] += 1
-
-    jobs.sort(key=by_rank_and_score)
+    for job in jobs:
+        if (analysis := job['analysis']) is not None:
+            rank = analysis['rank']
+            job['analysis'] = {**analysis, 'evidence_rank':rank, 'evidence_grade':GRADES[rank]}
+            counts[rank] += 1
+    if sort:
+        jobs.sort(key=by_rank_and_score)
     return [{'grade': grade, 'count': count} for grade, count in zip(GRADES, counts)]
 
 

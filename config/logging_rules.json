@@ -20,7 +20,10 @@
     "retrieval_count",
     "token_usage",
     "error_code",
-    "retry_count"
+    "retry_count",
+    "source",
+    "http_status",
+    "returned_count"
   ],
   "levels": {
     "INFO": "开始/完成与必要性能指标",

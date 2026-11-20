@@ -12,18 +12,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .discovery_models import JobCandidate, job_identity
 from .discovery_online import Himalayas, remote_query
 from .audit import measure
-from .discovery_rules import assess
+from .discovery_rules import assess, doctoral_requirements
 from .errors import AppError
 from .store import dumps, uid
+from .workers_drafts import AGENT_FALLBACK
 
 log = logging.getLogger(__name__)
 DEGREES = ('high_school', 'bachelor', 'master', 'phd')
 COUNTRIES = {'US':'united states', 'CA':'canada', 'GB':'united kingdom', 'CN':'china', 'AU':'australia',
              'DE':'germany', 'FR':'france', 'IN':'india', 'SG':'singapore', 'JP':'japan'}
-ACADEMIC = re.compile(r'\b(?:ph\.?\s*d\.?|doctorate|doctoral)\b|博士', re.I)
-PREFERRED = re.compile(r'preferred|nice to have|bonus|optional|优先|加分', re.I)
-NEGATED = re.compile(r'not required|not mandatory|非必需|无需|不要求', re.I)
-REQUIRED = re.compile(r'must|required|requirements|only|minimum|enrolled|必需|必须|仅限|要求', re.I)
 
 
 class AgentInput(BaseModel):
@@ -49,7 +46,7 @@ class Answer(BaseModel):
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
     action: Literal['search', 'read', 'retrieve', 'ask', 'finish']
-    argument: str | None
+    argument: str | None = Field(max_length=160)
 
 
 class SearchObservation(BaseModel):
@@ -70,11 +67,7 @@ class Eligibility(BaseModel):
 
 
 def eligibility(job, options):
-    text = job.jd or job.jd_summary or ''
-    sentences = re.split(r'[。；;\n]+|(?<=[!?])\s+|(?<=[a-z])\.\s+(?=[A-Z])', text)
-    mentions = [line.strip()[:280] for line in sentences if ACADEMIC.search(line)]
-    preferred = next((line for line in mentions if PREFERRED.search(line)), None)
-    required = next((line for line in mentions if REQUIRED.search(line) and not (PREFERRED.search(line) or NEGATED.search(line))), None)
+    required, preferred = doctoral_requirements(job.jd or job.jd_summary or '')
     degree = '待确认'
     if required and options.degree:
         degree = '符合' if options.degree == 'phd' else '冲突'
@@ -90,12 +83,18 @@ def eligibility(job, options):
 
 
 class DiscoveryAgent:
-    def __init__(self, service, discovery):
+    def __init__(self, service, discovery, workers=None):
         self.service, self.discovery, self.store = service, discovery, service.store
         self.source = Himalayas()
+        self.workers = workers
         with self.store.tx() as db:
             db.execute('CREATE TABLE IF NOT EXISTS agent_runs(id TEXT PRIMARY KEY, status TEXT NOT NULL, state TEXT NOT NULL)')
             db.execute("UPDATE agent_runs SET status='interrupted' WHERE status='running'")
+
+    def model_provider(self):
+        if self.service.settings.cloudflare_agent_enabled:
+            return 'cloudflare' if self.workers and self.workers.configured else None
+        return None if self.service.provider.simulated else 'openai'
 
     def create(self, options):
         resume = self.discovery.resume(options.resume_id)
@@ -103,16 +102,17 @@ class DiscoveryAgent:
         if any(not self.valid_term(term) for term in terms):
             raise AppError('INVALID_INPUT', '请使用简短职位词，避免粘贴简历。')
         settings = self.service.settings
+        provider = self.model_provider() if options.source == 'online' else None
         state = {'run_id':uid(), 'resume_version':resume['version'], 'options':options.model_dump(mode='json'),
                  'terms':terms, 'mode':'demo' if options.source != 'online' else
-                 'rule_fallback' if self.service.provider.simulated else 'live',
+                 'live' if provider else 'rule_fallback', 'provider':provider,
                  'budget':{'searches':settings.agent_searches, 'reads':settings.agent_reads,
                            'model_calls':settings.agent_calls, 'seconds':settings.agent_seconds},
                  'spent':{'searches':0, 'reads':0, 'model_calls':0, 'seconds':0},
                  'events':[], 'queries':[], 'jobs':{}, 'read':{}, 'retrieved':False, 'evidence':[],
                  'question':None, 'asked':[], 'recommendations':[], 'stop_reason':None}
-        if options.source == 'online' and self.service.provider.simulated:
-            state['events'].append({'action':'fallback','summary':'已使用规则降级。启用真实决策需配置 MODEL_MODE=live 和 OPENAI_API_KEY。'})
+        if options.source == 'online' and not provider:
+            state['events'].append({'action':'fallback','summary':'在线搜索使用规则决策，服务端尚未配置 Agent 模型。'})
         with self.store.tx() as db:
             db.execute('INSERT INTO agent_runs VALUES(?,?,?)', (state['run_id'],'queued',dumps(state)))
         return {'run_id':state['run_id'], 'status':'queued'}
@@ -134,7 +134,7 @@ class DiscoveryAgent:
         resume = self.store.one('SELECT id,name FROM resumes WHERE id=?', (resume_id,))
         inspected = [{'title':state['jobs'][key].get('title'), 'source_url':state['jobs'][key].get('url'),
                       **item['eligibility']} for key, item in state['read'].items()]
-        return {**result, 'inspected':inspected, 'status':row['status'], 'target':state['options']['target'],
+        return {**result, 'provider':state.get('provider'), 'inspected':inspected, 'status':row['status'], 'target':state['options']['target'],
                 'resume_id':resume_id, 'resume':resume}
 
     def answer(self, run_id, value):
@@ -226,14 +226,13 @@ class DiscoveryAgent:
 
     def decide(self, state, options, index, remaining):
         if state['mode'] == 'live' and state['spent']['model_calls'] < state['budget']['model_calls']:
-            state['spent']['model_calls'] += 1
-            self.save(state, 'running')
+            provider = state.get('provider', 'openai')
             observations = [{'id':key, 'title':item.get('title'), 'summary':(item.get('jd_summary') or '')[:160]}
                             for key,item in state['jobs'].items() if key not in state['read']][:20]
             inspected = [{'id':key, 'title':state['jobs'][key].get('title'), 'eligibility':item['eligibility'],
                           'score':item['analysis']['match_score'], 'reason':item['analysis']['reason'],
                           'duties':item['analysis']['duties'][:2]} for key,item in state['read'].items()]
-            prompt, _ = self.service.prompt('discovery_agent.txt', state=dumps({
+            context = {
                 'goal':options.goal, 'target':options.target, 'country':options.country, 'degree':options.degree,
                 'terms':state['terms'], 'queries':state['queries'], 'unread':observations, 'read':inspected,
                 'weekly_days':options.weekly_days, 'internship_months':options.internship_months,
@@ -241,11 +240,38 @@ class DiscoveryAgent:
                 'resume_signals':sorted({skill for row in index.rows for skill in row['skills']}),
                 'evidence':state['evidence'], 'asked':state['asked'], 'events':state['events'][-8:],
                 'remaining':{key:round(value-state['spent'][key], 2) for key,value in state['budget'].items()},
-            }))
+            }
+            settings = self.service.settings
             try:
-                value, _ = self.service.provider.run('agent', prompt, Action, timeout=min(remaining,self.service.settings.timeout))
-                action = Action.model_validate(value)
+                if provider == 'cloudflare':
+                    # The planner gets skill labels and evidence locations. Raw resume excerpts
+                    # stay in the visitor's workbench and in the evidence returned to that visitor.
+                    context['evidence'] = [item['line'] for item in state['evidence']]
+                    context['events'] = [event['action'] for event in state['events'][-8:]]
+                    context['goal'] = re.sub(
+                        r'https?://\S+|\S+@\S+|\+?\d[\d .()-]{7,}\d', '[已省略]', options.goal
+                    )
+                    instructions = self.service.prompt('discovery_agent.txt', state='')[0].strip()
+                    action, reason, attempted = self.workers.choose_action(
+                        context, instructions, Action, scope=settings.data_dir,
+                        public=settings.public_mode, timeout=remaining,
+                    )
+                    state['spent']['model_calls'] += int(attempted)
+                    if reason:
+                        raise AppError('INVALID_INPUT', AGENT_FALLBACK[reason])
+                else:
+                    state['spent']['model_calls'] += 1
+                    self.save(state, 'running')
+                    prompt, _ = self.service.prompt('discovery_agent.txt', state=dumps(context))
+                    value, _ = self.service.provider.run('agent', prompt, Action, timeout=min(remaining,settings.timeout))
+                    action = Action.model_validate(value)
                 if self.allowed(state, options, action):
+                    if provider == 'cloudflare':
+                        state['events'].append({'action':'model_decision','tool':action.action,
+                                                'summary':'Cloudflare 已选择下一步 · '+{
+                                                    'search':'搜索岗位','read':'核对岗位 JD','retrieve':'检索简历证据',
+                                                    'ask':'确认申请条件','finish':'结束并整理推荐',
+                                                }[action.action]})
                     return action
                 raise AppError('INVALID_INPUT', '模型建议的动作超出预算、重复或参数无效。')
             except (AppError, ValidationError) as error:

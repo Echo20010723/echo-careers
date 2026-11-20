@@ -93,6 +93,7 @@ class Discovery:
             request = DiscoveryRequest.saved(batch['request']).model_copy(update={'resume_id': resume_id})
             counts = json.loads(batch['counts'])
             counts.pop('current_term', None)
+            counts.pop('rerun_job', None)
             counts['reuse_candidates'] = True
             counts['parent_batch_id'] = batch_id
             db.execute('INSERT INTO discovery_batches VALUES(?,?,?,?,?,NULL)',
@@ -101,13 +102,25 @@ class Discovery:
                            [(uid(), new_id, item['position'], item['job_id'], item['payload']) for item in items])
         return {'id': new_id, 'stage': 'queued'}
 
-    def retry(self, batch_id):
+    def retry(self, batch_id, job_id=None):
         with self.store.tx() as db:
-            batch = db.execute('SELECT stage,request FROM discovery_batches WHERE id=?', (batch_id,)).fetchone()
-            if not batch or batch['stage'] not in ('partial', 'failed'):
+
+            batch = db.execute('SELECT stage,request,counts FROM discovery_batches WHERE id=?', (batch_id,)).fetchone()
+            allowed = ('complete', 'partial', 'failed') if job_id else ('partial', 'failed')
+            if not batch or batch['stage'] not in allowed:
                 raise AppError('CONFLICT')
-            db.execute('UPDATE discovery_items SET error=NULL WHERE batch_id=? AND result IS NULL', (batch_id,))
-            db.execute("UPDATE discovery_batches SET stage='queued', error=NULL WHERE id=?", (batch_id,))
+            counts = json.loads(batch['counts'])
+            if job_id:
+                if DiscoveryRequest.saved(batch['request']).mode != 'source_page' or not db.execute(
+                    'UPDATE discovery_items SET error=NULL,result=NULL WHERE batch_id=? AND job_id=?',
+                    (batch_id, job_id),
+                ).rowcount:
+                    raise AppError('INVALID_INPUT')
+                counts['rerun_job'] = job_id
+            else:
+                counts.pop('rerun_job', None)
+                db.execute('UPDATE discovery_items SET error=NULL WHERE batch_id=? AND result IS NULL', (batch_id,))
+            db.execute("UPDATE discovery_batches SET stage='queued', error=NULL, counts=? WHERE id=?", (dumps(counts),batch_id))
         return {'id': batch_id, 'stage': 'queued'}
 
     def current_stage(self, batch_id):
@@ -123,6 +136,7 @@ class Discovery:
                    counts=json.loads(row['counts']))
         row['reused_candidates'] = row['counts'].pop('reuse_candidates', False)
         row['parent_batch_id'] = row['counts'].pop('parent_batch_id', None)
+        row['counts'].pop('rerun_job', None)
         row['query_conditions'] = request.model_dump(mode='json', exclude={'jobs','resume_id'})
         row['resume'] = self.store.one('SELECT id,name,version FROM resumes WHERE id=?', (request.resume_id,))
         items = self.store.all('SELECT * FROM discovery_items WHERE batch_id=? ORDER BY position', (batch_id,))
@@ -134,7 +148,7 @@ class Discovery:
              'evaluation_mode':json.loads(item['result'])['evaluation_mode'] if item['result'] else None,
              'error':item['error']} for item in items
         ]
-        row['grade_distribution'] = rank_batch(row['jobs'])
+        row['grade_distribution'] = rank_batch(row['jobs'], sort=request.mode != 'source_page' or row['stage'] in {'complete','partial','failed'})
         return row
 
     def stage(self, batch_id, stage, counts=None, error=None):
@@ -161,7 +175,7 @@ class Discovery:
                 elif not self.store.one('SELECT id FROM discovery_items WHERE batch_id=? LIMIT 1', (batch_id,)):
                     self.fetch(batch_id, request)
             self.stage(batch_id, 'analyzing')
-            self.analyze(batch_id, request, resume, index)
+            self.analyze(batch_id, request, resume, index, rerun_job=json.loads(row['counts']).get('rerun_job'))
             failed = self.store.one(
                 'SELECT COUNT(*) AS n FROM discovery_items WHERE batch_id=? AND error IS NOT NULL', (batch_id,),
             )['n']
@@ -182,8 +196,11 @@ class Discovery:
         with measure(self.service.audit, 'provided_jd_read', batch_id):
             rows = self.local_source.fetch(request)
         self.stage(batch_id, 'deduplicating', {'fetched':len(rows)})
-        direct = request.mode == 'paste'
+        direct = request.mode in {'paste', 'source_page'}
         selected, matched, unique = select_candidates(rows, request.terms, request.limit, include_unmatched=direct)
+        if request.mode == 'source_page':
+            positions = {job.source_id: index for index, job in enumerate(rows)}
+            selected.sort(key=lambda group: positions[group['job'].source_id])
         counts = {'fetched':len(rows), 'matched':matched, 'unique':unique,
                   'duplicates':(len(rows) if direct else matched)-unique, 'selected':len(selected)}
         self.save_candidates(batch_id, request, selected, counts)
@@ -300,8 +317,8 @@ class Discovery:
         self.store.set(key,saved)
         return list(dict.fromkeys(source_errors.values()))
 
-    def analyze(self, batch_id, request, resume, index):
-        constraints = request.model_dump(mode='json', include={'city','job_type','internship_months','available_from','graduation_year','weekly_days'})
+    def analyze(self, batch_id, request, resume, index, rerun_job=None):
+        constraints = request.model_dump(mode='json', include={'city','job_type','internship_months','available_from','graduation_year','weekly_days','degree'})
         config = {
             'version':RULE_VERSION, 'mode':self.service.settings.model_mode,
             'model':self.service.settings.model_match,
@@ -309,11 +326,13 @@ class Discovery:
         }
         items = self.store.all('SELECT * FROM discovery_items WHERE batch_id=? AND result IS NULL AND error IS NULL', (batch_id,))
         for item in items:
+            if rerun_job and item['job_id'] != rerun_job:
+                continue
             try:
                 candidate = JobCandidate.model_validate_json(item['payload'])
-                job_content = candidate.model_dump(exclude={'source','source_id','url','source_page_url','search_terms','imported_at'})
+                job_content = candidate.model_dump(exclude={'source','source_id','url','source_page_url','search_terms','imported_at','contact_emails','application_url'})
                 key = 'discovery-match:' + digest(dumps([resume['version'], config, constraints, job_content]))
-                result = self.store.get(key)
+                result = None if rerun_job else self.store.get(key)
                 cache_hit = result is not None
                 if not cache_hit:
                     with measure(self.service.audit, 'match_analysis', batch_id):

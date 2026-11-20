@@ -15,5 +15,11 @@ services:
         value: /app/data
       - key: PUBLIC_SESSION_SECRET
         generateValue: true
+      - key: CLOUDFLARE_AGENT_ENABLED
+        value: "true"
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
       - key: MODEL_TIMEOUT
         value: "12"

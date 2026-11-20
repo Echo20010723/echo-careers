@@ -45,12 +45,26 @@ class MatchExtraction(BaseModel):
     resume_evidence: list[EvidenceExcerpt]
 
 
+def valid_recruiting_email(address):
+    return len(address) <= 254 and bool(re.fullmatch(
+        r'[A-Za-z0-9_+%-]+(?:\.[A-Za-z0-9_+%-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}',
+        address,
+    ))
+
+
 class JobCandidate(BaseModel):
     model_config = ConfigDict(extra='ignore', str_strip_whitespace=True)
     source: str | None = Field(None, max_length=100)
     source_id: str | None = Field(None, max_length=180)
     title: str | None = Field(None, max_length=300)
     company: str | None = Field(None, max_length=300)
+    posting_id: str | None = Field(None, max_length=120)
+    team: str | None = Field(None, max_length=300)
+    published_at: str | None = Field(None, max_length=60)
+    original_source_url: str | None = Field(None, max_length=1500)
+    contact_emails: list[str] = Field(default_factory=list, max_length=8)
+    description: str | None = Field(None, max_length=12000)
+    requirements: str | None = Field(None, max_length=4500)
     city: str | None = Field(None, max_length=300)
     salary_raw: str | None = Field(None, max_length=300)
     application_url: str | None = Field(None, max_length=1500)
@@ -90,17 +104,35 @@ class JobCandidate(BaseModel):
                     result[key] = []
         return result
 
-    @field_validator('url', 'source_page_url', 'application_url')
+    @field_validator('contact_emails')
+    @classmethod
+    def validate_emails(cls, addresses):
+        return list(dict.fromkeys(address for address in addresses if valid_recruiting_email(address)))
+
+    @field_validator('url', 'source_page_url', 'original_source_url')
     @classmethod
     def normalize_url(cls, value):
         return job_link(value)
 
 
+    @field_validator('application_url')
+    @classmethod
+    def validate_application_url(cls, value):
+        # Apply links can contain meaningful query parameters and anchors.
+        return value if job_link(value) else None
+
+
 class DiscoveryRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     resume_id: str = Field(min_length=1, max_length=100)
-    platform: Literal['himalayas','greenhouse','careerjet','boss'] = 'himalayas'
-    mode: Literal['online', 'demo', 'import', 'paste'] = 'online'
+    platform: Literal['himalayas','greenhouse','careerjet','boss','offerdao'] = 'himalayas'
+    mode: Literal['online', 'demo', 'import', 'paste', 'source_page'] = 'online'
+    source_query: str | None = Field(None, max_length=100)
+    source_employment_type: str | None = Field(None, max_length=60)
+    source_total: int | None = Field(None, ge=0)
+    source_offset: int = Field(0, ge=0)
+    source_limit: int | None = Field(None, ge=1, le=30)
+    degree: Literal['high_school', 'bachelor', 'master', 'phd'] | None = None
     limit: int = Field(50, ge=1, le=100, strict=True)
     terms: list[str] = Field(max_length=100)
     jobs: list[JobCandidate] = Field(default_factory=list, max_length=1000)
@@ -136,6 +168,13 @@ class DiscoveryRequest(BaseModel):
 
     @model_validator(mode='after')
     def validate_mode(self):
+        if self.mode == 'source_page':
+            if self.platform != 'offerdao' or not 1 <= len(self.jobs) <= 100 or any(
+                job.source != 'offerdao' or not job.source_id for job in self.jobs
+            ):
+                raise ValueError('请选择 1–100 个本页 Offer岛岗位')
+            self.limit = len(self.jobs)
+            return self
         if self.mode == 'paste':
             if len(self.jobs) != 1 or not self.jobs[0].jd:
                 raise ValueError('请粘贴一份岗位正文')
@@ -165,7 +204,7 @@ class LocalSource:
         self.demo_path = demo_path
 
     def fetch(self, request):
-        if request.mode in {'import','paste'}:
+        if request.mode in {'import','paste','source_page'}:
             return request.jobs
         import json
         return [JobCandidate.model_validate(row) for row in json.loads(self.demo_path.read_text(encoding='utf-8-sig'))]
@@ -176,7 +215,7 @@ def job_identity(job):
     keys = []
     if job.source_id:
         keys.append(('id', origin, job.source_id))
-    if job.url and urlsplit(job.url).path not in {'', '/', '/web/geek/jobs'}:
+    if job.url and not (origin == 'offerdao' and job.source_id) and urlsplit(job.url).path not in {'', '/', '/web/geek/jobs'}:
         keys.append(('url', job.url))
     if not keys and all((job.company, job.title, job.city)):
         keys.append(('text', *(normalized(value) for value in (job.company, job.title, job.city))))

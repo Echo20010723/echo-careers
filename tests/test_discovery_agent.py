@@ -110,3 +110,56 @@ def test_live_decision_sees_observation_before_changing_search(tmp_path, monkeyp
         assert outcome['spent']['model_calls'] == 5
         assert outcome['recommendations'][0]['source_id'] == 'api'
         assert 'Candidates must be enrolled in a PhD program' in prompts[2]
+
+
+
+def test_public_workers_agent_observes_jd_and_shares_request_budget(tmp_path, monkeypatch):
+    from httpx import MockTransport, Response
+    from app.workers_drafts import WorkersDrafts
+
+    actions = iter([
+        ('search', 'Agent developer'), ('read', 'job-1'), ('search', 'AI backend intern'),
+        ('read', 'job-2'), ('retrieve', 'Python FastAPI RAG'), ('finish', None),
+    ])
+    contexts = []
+
+    def infer(request):
+        assert request.url.path.endswith('/ai/v1/chat/completions')
+        assert request.headers['authorization'] == 'Bearer test-token'
+        payload = json.loads(request.content)
+        assert payload['model'] == '@cf/qwen/qwen3.8-27b'
+        assert payload['store'] is False
+        contexts.append(json.loads(payload['messages'][1]['content']))
+        action, argument = next(actions)
+        return Response(200, json={'choices':[{'finish_reason':'stop', 'message':{
+            'content':json.dumps({'action':action,'argument':argument}), 'reasoning_content':'internal'
+        }}]})
+
+    def search(self, term, options, offset, context):
+        key = {'Agent developer':'phd-a', 'AI backend intern':'api'}[term]
+        return SearchPage([JobCandidate.model_validate(FIXTURE['jobs'][key])], False, 1, query=term)
+
+    monkeypatch.setattr(WorkersDrafts, 'transport', MockTransport(infer))
+    monkeypatch.setattr('app.discovery_agent.Himalayas.page', search)
+    settings = Settings(data_dir=tmp_path, public_mode=True, cloudflare_agent_enabled=True,
+                        cloudflare_account_id='a'*32, cloudflare_api_token='test-token',
+                        cloudflare_daily_drafts=6)
+    with TestClient(create_app(settings)) as client:
+        assert client.get('/health').json()['agent_provider'] == 'cloudflare'
+        run, _ = launch(client, source='online', target=1, degree='bachelor')
+        outcome = wait(client, run)
+        assert (outcome['status'], outcome['mode'], outcome['provider']) == ('complete', 'live', 'cloudflare')
+        assert outcome['recommendations'][0]['source_id'] == 'api'
+        assert contexts[2]['read'][0]['eligibility']['degree'] == '冲突'
+        assert all(isinstance(line, int) for line in contexts[-1]['evidence'])
+        assert 'internal' not in str(outcome)
+        assert [e['tool'] for e in outcome['events'] if e['action'] == 'model_decision'] == [
+            'search', 'read', 'search', 'read', 'retrieve', 'finish']
+        assert wait(client, run)['spent']['model_calls'] == 6
+        blocked, _ = launch(client, source='online', target=1, degree='bachelor', terms=['Agent developer'])
+        fallback = wait(client, blocked)
+        assert fallback['mode'] == 'rule_fallback'
+        assert fallback['spent']['model_calls'] == 0
+        assert '本站今日' in fallback['events'][0]['summary']
+        usage = client.get('/health').json()['draft_usage']
+        assert usage['attempts'] == usage['agent_attempts'] == usage['agent_succeeded'] == 6

@@ -340,7 +340,8 @@ def test_retired_online_sources_are_unavailable(discovery_client):
     client=discovery_client
     rid=upload(client)
     assert client.get('/api/discovery/sources').json() == {
-        'sources':[{'id':'himalayas','name':'Himalayas','ready':True}]
+        'sources':[{'id':'himalayas','name':'Himalayas','ready':True},
+                   {'id':'offerdao','name':'国内 AI 岗位 · Offer岛','ready':False}]
     }
     for retired in ('greenhouse','careerjet','boss'):
         assert start(client,rid,platform=retired,mode='online').status_code == 503
@@ -377,20 +378,19 @@ def test_himalayas_zero_and_only_failed_term_is_retried(discovery_client, monkey
     assert calls==[('Agent',1),('Python',1),('Agent',2),('Python',1),('Python',2)]
     assert start(client,rid,platform='boss',mode='online').status_code==503
 
-@pytest.mark.parametrize(('total','expected'), [(0,[0,0,0,0,0]), (1,[1,0,0,0,0]), (3,[1,0,1,1,0]),
-    (5,[1,1,1,1,1]), (10,[1,2,4,2,1]), (50,[5,10,20,10,5]), (100,[10,20,40,20,10])])
-def test_relative_distribution_caps_top_and_keeps_all_labels(total, expected):
+@pytest.mark.parametrize('total', [0,1,3,5,10,50,100])
+def test_distribution_preserves_evidence_grades_and_keeps_all_labels(total):
     from app.discovery_rules import GRADES, rank_batch
 
     jobs = [{'analysis':{'rank':0, 'grade':GRADES[0], 'match_score':score}}
             for score in range(total)]
     distribution = rank_batch(jobs)
-    assert distribution == [dict(grade=grade, count=count) for grade, count in zip(GRADES, expected)]
+    assert distribution == [dict(grade=grade, count=count) for grade, count in zip(GRADES, [total,0,0,0,0])]
     assert [job['analysis']['match_score'] for job in jobs] == list(reversed(range(total)))
     assert all(job['analysis']['evidence_rank'] == 0 for job in jobs)
 
 
-def test_relative_grades_do_not_promote_weak_evidence_or_conflicts():
+def test_grades_do_not_promote_weak_evidence_or_conflicts():
     from app.discovery_rules import GRADES, rank_batch
 
     # High skill scores cannot override evidence or hard-condition constraints.

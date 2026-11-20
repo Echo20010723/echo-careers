@@ -13,10 +13,12 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
+from .runtime import runtime_revision
+
 COOKIE = 'echo_visitor'
 ID = '[a-f0-9]{32}'
 RESUME = '(?:demo-resume|'+ID+')'
-GET = re.compile(rf'/api/(?:state|preferences|resumes/{RESUME}|discovery/sources|'
+GET = re.compile(rf'/api/(?:state|preferences|resumes/{RESUME}|discovery/(?:sources|offerdao/search)|'
                  rf'discovery/resumes/{RESUME}/terms|discovery/tasks/{ID}(?:/export)?|'
                  rf'discovery/agent/{ID}(?:/export)?|conversations/{ID}|applications/report)')
 POST = re.compile(rf'/api/(?:resumes|resumes/{RESUME}/select|discovery/(?:example|resumes|resume-text|tasks|agent|drafts)|'
@@ -26,7 +28,8 @@ PUT = re.compile(rf'/api/(?:preferences|applications/{ID})')
 CSP = "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 
-def create_public_app(settings, factory):
+def create_public_app(settings, factory, offerdao, workers_drafts):
+    revision = runtime_revision(settings.root)
     sessions = {}
     gate = asyncio.Lock()
     cookie_secret = (os.getenv('PUBLIC_SESSION_SECRET') or secrets.token_hex(32)).encode()
@@ -48,6 +51,8 @@ def create_public_app(settings, factory):
         yield
         for visitor in sessions.values():
             await visitor['stack'].aclose()
+        await offerdao.close()
+        await asyncio.to_thread(workers_drafts.close)
 
     web = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
@@ -66,7 +71,11 @@ def create_public_app(settings, factory):
     @web.get('/health')
     def health():
         return decorate(JSONResponse({'status':'ok', 'app':'career-workbench', 'public':True,
-                                     'model_mode':settings.model_mode,
+                                     'model_mode':settings.model_mode, 'draft_usage':workers_drafts.usage(),
+                                     'runtime_revision':revision,
+                                     'agent_provider':('cloudflare' if workers_drafts.configured else None)
+                                         if settings.cloudflare_agent_enabled else
+                                         ('openai' if settings.model_mode == 'live' and os.getenv('OPENAI_API_KEY') else None),
                                      'model_configured':settings.model_mode == 'mock' or bool(os.getenv('OPENAI_API_KEY'))}))
 
     @web.get('/')
@@ -119,7 +128,7 @@ def create_public_app(settings, factory):
                         'boss_auto_search':False, 'boss_auto_contact':False, 'default_mode':'draft',
                         'vector_backend':'memory', 'retries':0, 'max_calls':min(settings.max_calls, 24),
                     })
-                    inner = await asyncio.to_thread(factory, scoped, _public_scope=True)
+                    inner = await asyncio.to_thread(factory, scoped, _public_scope=True, _offerdao=offerdao, _workers_drafts=workers_drafts)
                     stack = AsyncExitStack()
                     await stack.enter_async_context(inner.router.lifespan_context(inner))
                     sessions[token] = {'app':inner, 'stack':stack, 'seen':now, 'active':0}

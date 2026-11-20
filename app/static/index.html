@@ -1,82 +1,149 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Echo Careers · 实习与岗位工作台</title>
-  <link rel="icon" type="image/png" href="/static/echo-logo.png">
-  <link rel="stylesheet" href="/static/style.css?v=12">
-  <script defer src="/static/app.js?v=5"></script>
-  <script defer src="/static/discovery.js?v=13"></script>
+  <link rel="icon" type="image/png" href="/static/echo-logo-small.png">
+  <script src="/static/theme.js?v=1"></script>
+  <link rel="preload" href="/static/quicksand-latin-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/geist-pixel-circle.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/style.css?v=37">
+  <script defer src="/static/app.js?v=7"></script>
+  <script defer src="/static/filter-picker.js?v=1"></script>
+  <script defer src="/static/discovery.js?v=32"></script>
   <script defer src="/static/discovery-layout.js?v=1"></script>
+  <script defer src="/static/hero-terrain.js?v=4"></script>
 </head>
 <body>
   <div class="site-header">
   <header class="shell">
-    <a class="brand" href="/" aria-label="Echo Careers 首页">Echo Careers</a>
+    <a class="brand" href="/" aria-label="Echo Careers 首页"><img src="/static/echo-logo-small.png" width="30" height="34" alt=""> <span class="brand-wordmark">Echo Careers</span></a>
     <nav aria-label="工作台导航">
       <button data-tab="discovery" class="active" aria-current="page">岗位发现</button>
       <button data-tab="records">跟进记录</button>
       <button data-tab="assistant">沟通草稿</button>
       <button data-tab="materials">简历与偏好</button>
     </nav>
-    <span id="mode-badge" class="badge" aria-live="polite">载入中</span>
+    <div id="theme-switch" class="theme-switch" role="group" aria-label="页面主题">
+      <input type="radio" name="theme" value="light" id="theme-light">
+      <label for="theme-light"><span class="theme-icon" aria-hidden="true">☀</span><span class="theme-name">浅色</span></label>
+      <input type="radio" name="theme" value="dark" id="theme-dark" checked>
+      <label for="theme-dark"><span class="theme-icon" aria-hidden="true">☾</span><span class="theme-name">深色</span></label>
+    </div>
   </header>
   </div>
   <div class="shell">
   <div id="notice" role="status" aria-live="polite"></div>
   <main>
     <section id="discovery" class="tab active">
-      <div id="discovery-intake">
-        <div class="discovery-hero">
-          <p id="deployment-banner" class="deployment-banner" hidden></p>
-          <div class="hero-mark"><img src="/static/echo-logo.png" width="1147" height="1371" alt=""></div>
-          <h1>找到值得投递的岗位</h1>
-          <p>从简历生成搜索词，查找远程岗位，按匹配度排序。</p>
-        </div>
-        <div class="discovery-setup">
-          <article class="resume-intake">
-            <div class="resume-intake-heading">
-              <h2>上传简历</h2>
-              <p id="resume-file-hint">支持文字版 PDF、TXT、Markdown</p>
+      <div id="discovery-intake" class="landing">
+        <section class="landing-hero" aria-labelledby="landing-title">
+          <div class="hero-material" aria-hidden="true"><canvas></canvas></div>
+          <div class="landing-copy">
+            <h1 id="landing-title" class="landing-title" lang="en"><span class="title-lead">Intelligence</span>
+              <span class="title-tail"><span>Designed To</span> <span>Match</span></span></h1>
+            <p class="landing-intro">从简历出发，找到值得投递的岗位。</p>
+            <div class="landing-actions">
+              <button type="button" id="discovery-open-upload" class="landing-primary"><span class="landing-upload-icon" aria-hidden="true">↑</span>上传简历</button>
+              <button type="button" id="discovery-return" class="secondary" hidden>继续上次简历</button>
             </div>
+            <p id="discovery-profile" role="status"></p>
+          </div>
+          <a class="landing-sample-link" id="discovery-show-example" href="#sample-title">查看示例 <span aria-hidden="true">↓</span></a>
+        </section>
+
+        <section class="landing-examples" aria-labelledby="sample-title">
+          <h2 id="sample-title" tabindex="-1">看看匹配结果</h2>
+          <div class="example-flow">
+            <article class="landing-preview" aria-labelledby="sample-resume-title">
+              <h3 id="sample-resume-title">脱敏示例简历</h3>
+              <ul>
+                <li>用 Python、FastAPI 开发接口并验证请求。</li>
+                <li>在工单 Agent 项目中实现工具调用与状态管理。</li>
+                <li>做过带引用溯源的 RAG 文档问答。</li>
+              </ul>
+              <a href="/static/resume-demo.md" download>下载脱敏简历示例</a>
+            </article>
+            <article class="landing-preview" aria-labelledby="sample-result-title">
+              <h3 id="sample-result-title">示例岗位</h3>
+              <div class="sample-match">
+                <div class="discovery-job-heading">
+                  <strong id="sample-role">Agent 开发实习生</strong>
+                  <span class="grade grade-0">夯</span>
+                </div>
+                <p class="sample-meta">演示企业01（虚构） · 上海 · 实习</p>
+                <dl class="sample-evaluation">
+                  <div><dt>匹配证据</dt><dd>工单 Agent 项目实现了工作流编排、工具调用和状态管理。</dd></div>
+                  <div><dt>待核对</dt><dd>岗位未说明每周出勤要求。</dd></div>
+                </dl>
+              </div>
+            </article>
+          </div>
+          <div class="landing-actions">
+            <button type="button" id="discovery-use-example" class="landing-primary">用示例体验 <span aria-hidden="true">→</span></button>
+          </div>
+          <p id="example-profile" role="status"></p>
+          <details class="landing-upload">
+            <summary>拖放文件或粘贴简历文本</summary>
             <form id="discovery-resume-form">
-              <input id="discovery-resume" type="file" accept=".pdf,.txt,.md" aria-label="简历文件" aria-describedby="resume-file-hint" required>
-              <button type="submit">上传并生成搜索词 <span aria-hidden="true">↑</span></button>
+              <div id="resume-drop-zone" class="resume-drop-zone">
+                <label for="discovery-resume">选择文件或拖放简历</label>
+                <p id="resume-file-hint" class="muted">支持文字版 PDF、TXT、Markdown</p>
+                <input id="discovery-resume" type="file" accept=".pdf,.txt,.md" aria-describedby="resume-file-hint" required>
+              </div>
+              <button type="submit">上传并生成搜索词</button>
             </form>
-            <details><summary>粘贴简历文本</summary>
+            <details class="landing-paste"><summary>粘贴简历文本</summary>
               <form id="discovery-paste-form">
                 <label>简历正文<textarea id="discovery-resume-text" rows="5" maxlength="40000" required></textarea></label>
                 <button type="submit">保存并生成搜索词</button>
               </form>
             </details>
-            <div class="actions resume-example-actions"><button type="button" id="discovery-use-example" class="secondary">选用示例简历</button>
-              <a href="/static/resume-demo.md" download>下载脱敏简历示例</a></div>
-            <button type="button" class="text-button" id="discovery-return" hidden>返回工作台 <span aria-hidden="true">→</span></button>
-            <p id="discovery-profile" role="status"></p>
-            <details id="discovery-evidence" hidden><summary>简历摘要和证据</summary><div id="discovery-summary"></div></details>
-          </article>
-        </div>
+            <p id="manual-resume-profile" role="status"></p>
+          </details>
+        </section>
       </div>
+
       <div class="discovery-workspace">
         <button type="button" class="secondary mobile-workspace-control" id="mobile-search-toggle" aria-controls="discovery-settings" aria-expanded="true">搜索配置</button>
         <div class="discovery-workspace-grid">
+          <div class="workspace-top">
+            <div id="workspace-resume" class="workspace-resume" role="status" hidden>
+              <span>简历就绪 ·</span>
+              <details id="workspace-resume-file" class="resume-filename">
+                <summary id="workspace-resume-short"></summary>
+                <p id="workspace-resume-full"></p>
+              </details>
+            </div>
+            <button type="button" class="text-button" id="discovery-attach-resume" aria-expanded="false" aria-controls="discovery-resume-panel">上传简历</button>
+          </div>
           <article id="discovery-settings" hidden aria-labelledby="discovery-settings-title">
-            <button type="button" id="discovery-back" class="text-button"><span aria-hidden="true">←</span> 返回简历</button>
+            <button type="button" id="discovery-back" class="text-button"><span aria-hidden="true">←</span> 返回首页</button>
+            <details id="discovery-evidence" hidden><summary>简历摘要和证据</summary><p id="workspace-analysis-mode" class="muted"></p><div id="discovery-summary"></div></details>
             <form id="discovery-task-form">
-              <h2 id="discovery-settings-title" tabindex="-1">编辑职位搜索词</h2>
-              <div id="discovery-terms"></div>
-              <button id="discovery-add" type="button" class="secondary">添加搜索词</button>
-              <p id="discovery-terms-hint" class="muted"></p>
-              <details id="occupation-suggestions" hidden><summary>推荐依据与待核对项</summary><ul id="occupation-directions"></ul></details>
+              <h2 id="discovery-settings-title" tabindex="-1">搜索条件</h2>
+              <div id="discovery-remote-terms">
+                <div id="discovery-terms"></div>
+                <button id="discovery-add" type="button" class="secondary">添加搜索词</button>
+                <p id="discovery-terms-hint" class="muted"></p>
+                <details id="occupation-suggestions" hidden><summary>推荐依据与待核对项</summary><ul id="occupation-directions"></ul></details>
+              </div>
               <h2 class="discovery-subheading">来源与候选数量</h2>
               <div class="two-col discovery-source-fields">
-                <div class="source-label"><span>岗位来源</span><strong id="discovery-source-label">Himalayas · 远程</strong></div>
-                <label>本轮最多分析<input id="discovery-limit" type="number" min="1" max="100" value="50" required></label>
+                <div id="discovery-platform-field" class="picker-field picker-full"><label for="discovery-platform">岗位来源</label><select id="discovery-platform" data-picker="full"><option value="himalayas" data-description="远程岗位">Himalayas</option><option value="offerdao" data-description="国内 AI 岗位">Offer 岛</option></select></div>
+                <div class="source-label" id="discovery-source-static" hidden><span>岗位来源</span><strong id="discovery-source-label"></strong></div>
+                <label id="discovery-limit-field">本轮最多分析<input id="discovery-limit" type="number" min="1" max="100" value="50" required></label>
+              </div>
+              <div id="offerdao-fields" hidden>
+                <label>职位搜索词<input id="offerdao-query" maxlength="100" placeholder="例如 Agent 开发"></label>
+                <label>城市<input id="offerdao-city" maxlength="40" placeholder="例如 上海"></label>
+                <div class="picker-field picker-full"><label for="offerdao-type">岗位类型</label><select id="offerdao-type" data-picker="full"><option value="">不限</option><option>实习</option><option>正式</option><option>校招</option><option>研究助理</option><option>访问</option><option>PhD</option><option>Postdoc</option></select></div>
+                <p class="muted">空格分词后须全部命中。类型筛选按卡片的首个子岗位，可能漏掉混合卡片。</p>
               </div>
               <label id="discovery-city-field" hidden>城市<input id="discovery-city" maxlength="40" placeholder="不限制城市"></label>
               <label id="discovery-country-field">可远程工作的国家/地区<input id="discovery-country" maxlength="2" pattern="[A-Za-z]{2}" placeholder="例如 CN 或 AU；留空不限"></label>
-              <label id="discovery-type-field">职位类型<select id="discovery-job-type"><option value="any">不限</option><option value="internship">实习</option></select></label>
+              <div id="discovery-type-field" class="picker-field picker-full"><label for="discovery-job-type">职位类型</label><select id="discovery-job-type" data-picker="full"><option value="any">不限</option><option value="internship">实习</option></select></div>
               <input type="hidden" id="discovery-mode" value="online">
               <p id="discovery-mode-note" class="muted" role="status">正在检查招聘来源。</p>
               <label id="discovery-jd-field" hidden>岗位正文<textarea id="discovery-jd" rows="5" maxlength="18000"></textarea></label>
@@ -90,15 +157,19 @@
                 </div>
                 <label id="discovery-file-field" hidden>选择岗位 JSON<input id="discovery-job-file" type="file" accept=".json,application/json"></label>
               </details>
-              <details><summary>核对到岗、实习时长、出勤和届别</summary>
+              <details><summary>核对学历、到岗、实习时长、出勤和届别</summary>
                 <div class="two-col">
                   <label>可实习月数<input id="discovery-months" type="number" min="1" max="36"></label>
                   <label>最早到岗日期<input id="discovery-available" type="date"></label>
                   <label>每周可出勤天数<input id="discovery-days" type="number" min="1" max="7"></label>
+                  <label>已确认学历<select id="discovery-degree">
+                    <option value="">待确认</option><option value="high_school">高中</option><option value="bachelor">本科</option><option value="master">硕士</option><option value="phd">博士</option>
+                  </select></label>
                   <label>毕业年份<input id="discovery-graduation" type="number" min="2000" max="2100"></label>
                 </div>
               </details>
             </form>
+            <p id="deployment-banner" class="deployment-banner" hidden></p>
             <details id="agent-settings">
               <summary>岗位发现 Agent</summary>
               <form id="agent-form">
@@ -129,6 +200,11 @@
                   <a id="discovery-attribution" href="https://himalayas.app/" target="_blank" rel="noopener noreferrer" aria-label="岗位来源 Himalayas" hidden>Himalayas</a>
                 </div>
                 <div class="actions">
+                  <div id="offerdao-pagination" class="actions" hidden>
+                    <button type="button" id="offerdao-prev" class="secondary">上一页</button>
+                    <button type="button" id="offerdao-next" class="secondary">下一页</button>
+                  </div>
+                  <button type="button" id="offerdao-return" class="secondary" hidden>返回搜索结果</button>
                   <label id="discovery-history-field" hidden>历史批次<select id="discovery-history" aria-label="历史批次"></select></label>
                   <button id="discovery-retry" type="button" hidden>重试失败项</button>
                   <a id="discovery-export" class="button-link secondary" download hidden>导出 JSON</a>
@@ -157,10 +233,15 @@
               </details>
               <div id="discovery-filters" class="discovery-filters" hidden>
                 <ul id="discovery-grade-distribution" aria-label="按档位筛选"></ul>
-                <label class="legacy-grade-filter">档位<select id="filter-grade"><option value="">全部档位</option></select></label>
-                <label>地区<select id="filter-city"><option value="">全部地区</option></select></label>
-                <label>命中词<select id="filter-term"><option value="">全部搜索词</option></select></label>
-                <label class="check"><input id="filter-unknown" type="checkbox">仅看待确认</label>
+                <details id="discovery-filter-options" open>
+                  <summary>筛选岗位</summary>
+                  <div class="result-filter-fields">
+                    <label class="legacy-grade-filter">档位<select id="filter-grade"><option value="">全部档位</option></select></label>
+                    <div class="picker-field picker-compact"><label for="filter-city">地区</label><select id="filter-city" data-picker="compact"><option value="">全部地区</option></select></div>
+                    <div class="picker-field picker-compact"><label for="filter-term">命中词</label><select id="filter-term" data-picker="compact"><option value="">全部搜索词</option></select></div>
+                    <label class="check"><input id="filter-unknown" type="checkbox">仅看待确认</label>
+                  </div>
+                </details>
               </div>
             </div>
             <div class="workspace-divider horizontal" id="round-divider" role="separator" aria-label="展开或收起本轮详情" aria-orientation="horizontal" aria-controls="discovery-round" tabindex="0"></div>
@@ -168,19 +249,20 @@
               <div id="discovery-list" aria-label="岗位列表"></div>
               <div class="workspace-divider vertical" id="detail-divider" role="separator" aria-label="调整岗位列表宽度" aria-orientation="vertical" aria-controls="discovery-list" tabindex="0"></div>
               <div class="discovery-reading">
-                <div class="discovery-reading-tools">
-                  <button type="button" class="text-button" id="discovery-attach-resume" aria-expanded="false" aria-controls="discovery-resume-panel">上传简历</button>
+                <div class="discovery-reading-tools" id="discovery-reading-tools" hidden>
                   <div id="discovery-resume-update" hidden>
                     <p id="discovery-resume-status" role="status"></p>
-                    <p id="discovery-ranking-resume" class="muted"></p>
+                    <details id="discovery-ranking-resume" class="resume-filename muted" hidden>
+                      <summary id="discovery-ranking-short"></summary><p></p>
+                    </details>
                     <button type="button" class="secondary" id="discovery-reanalyze" hidden>用新简历重新分析</button>
                   </div>
                 </div>
                 <form id="discovery-resume-panel" hidden>
                   <h3 id="discovery-resume-panel-title">上传简历</h3>
                   <p id="discovery-resume-name" class="muted"></p>
-                  <label>简历文件<input id="discovery-inline-resume" type="file" accept=".pdf,.txt,.md" aria-describedby="resume-file-hint" required></label>
-                  <p class="muted">支持文字版 PDF、TXT、Markdown</p>
+                  <label>简历文件<input id="discovery-inline-resume" type="file" accept=".pdf,.txt,.md" aria-describedby="inline-resume-file-hint" required></label>
+                  <p class="muted" id="inline-resume-file-hint">支持文字版 PDF、TXT、Markdown</p>
                   <p id="discovery-inline-error" role="alert" hidden></p>
                   <div class="actions">
                     <button type="submit">上传并解析</button>
@@ -239,10 +321,11 @@
       <article><h2>草稿与消息</h2><div id="conversation-detail"></div><div id="outbox"></div><div id="demo-controls" hidden><p class="demo-label">以下只用于演示，不是真实招聘消息</p><div class="actions"><button id="demo-question" class="secondary">模拟普通问题</button><button id="demo-invite" class="secondary">模拟面试邀约</button></div><details><summary>输入其他演示问题</summary><textarea id="incoming" rows="2" placeholder="有没有接触过RAG？"></textarea><button id="receive" class="secondary">模拟收到消息</button></details></div></article></div>
       <article><h2>需要你接手</h2><div id="notifications"></div></article>
     </section>
-    <section id="materials" class="tab"><div class="page-heading"><h1>我的资料</h1><p>设置一次，后续匹配和回复都使用当前版本。</p></div><div class="two-col"><article><h2>简历</h2><form id="upload-form"><label>上传简历<input id="resume-file" type="file" accept=".txt,.md,.pdf" required></label><p class="muted">支持文字版PDF、TXT和Markdown；保留原文和历史版本。</p><button>保存并使用这份简历</button></form><div id="resumes"></div><details><summary>查看当前简历</summary><pre id="resume-preview">加载中…</pre></details></article><article><h2>求职偏好</h2><form id="preferences-form"><label>城市<textarea id="cities" rows="2" required></textarea></label><label>岗位关键词<textarea id="keywords" rows="2" required></textarea></label><label class="check"><input id="remote" type="checkbox">接受远程，优先线下</label><details><summary>薪资参考</summary><div class="two-col"><label>日薪最低<input id="daily-min" type="number" min="0" required></label><label>日薪最高<input id="daily-max" type="number" min="0" required></label><label>月薪最低<input id="monthly-min" type="number" min="0" required></label><label>月薪最高<input id="monthly-max" type="number" min="0" required></label></div><p class="muted">日薪和月薪分别参考，可以沟通。到岗、出勤和实习期限由你确认。</p></details><button>保存偏好</button></form></article></div></section>
+    <section id="materials" class="tab"><div class="page-heading"><h1>我的资料</h1><p>设置一次，后续匹配和回复都使用当前版本。</p></div><div class="two-col"><article><h2>简历</h2><button type="button" class="text-button" id="discovery-browse">先浏览 Offer岛岗位 <span aria-hidden="true">→</span></button><form id="upload-form"><label>上传简历<input id="resume-file" type="file" accept=".txt,.md,.pdf" required></label><p class="muted">支持文字版PDF、TXT和Markdown；保留原文和历史版本。</p><button>保存并使用这份简历</button></form><div id="resumes"></div><details><summary>查看当前简历</summary><pre id="resume-preview">加载中…</pre></details></article><article><h2>求职偏好</h2><form id="preferences-form"><label>城市<textarea id="cities" rows="2" required></textarea></label><label>岗位关键词<textarea id="keywords" rows="2" required></textarea></label><label class="check"><input id="remote" type="checkbox">接受远程，优先线下</label><details><summary>薪资参考</summary><div class="two-col"><label>日薪最低<input id="daily-min" type="number" min="0" required></label><label>日薪最高<input id="daily-max" type="number" min="0" required></label><label>月薪最低<input id="monthly-min" type="number" min="0" required></label><label>月薪最高<input id="monthly-max" type="number" min="0" required></label></div><p class="muted">日薪和月薪分别参考，可以沟通。到岗、出勤和实习期限由你确认。</p></details><button>保存偏好</button></form></article></div></section>
 
   </main>
   <footer><strong class="maker">Made by Echo Yu</strong><span id="system-summary"></span><details class="advanced"><summary>运行设置</summary>
+    <p><span id="mode-badge" class="badge" aria-live="polite">载入中</span></p>
     <p>岗位分析与草稿保存在本机。招聘平台上的投递和沟通由本人完成。</p>
     <button id="demo" class="secondary">运行模拟演示</button>
     <button id="rebuild" class="secondary">重建资料索引</button>

@@ -4,29 +4,36 @@ from pathlib import Path
 from urllib.request import build_opener,ProxyHandler
 if hasattr(sys.stdout,'reconfigure'):sys.stdout.reconfigure(encoding='utf-8')
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from app.runtime import runtime_revision
 URL='http://127.0.0.1:8766'
-def healthy():
+def running_health():
     try:
         with build_opener(ProxyHandler({})).open(URL+'/health',timeout=2) as response:
             data=json.load(response)
             valid=data.get('app') == 'career-workbench'
             if valid and data.get('pid'):
                 (ROOT/'data/server.pid').write_text(str(data['pid']),encoding='ascii')
-            return valid
-    except Exception:return False
+            return data if valid else None
+    except Exception:return None
 
 def main():
-    already_running=healthy()
-    if not already_running:
+    current=running_health()
+    expected=runtime_revision(ROOT)
+    if current and (current.get('runtime_revision') != expected
+                    or current.get('offerdao_ready') != bool(os.getenv('OFFERDAO_API_KEY', '').strip())):
+        print('检测到旧版后台或 Offer岛配置已更新。请停止当前工作台后台，再重新启动。')
+        return 1
+    if not current:
         data=ROOT/'data';data.mkdir(exist_ok=True)
         with (data/'server.log').open('ab') as output:
             child=subprocess.Popen([sys.executable,'-m','uvicorn','app.main:create_app','--factory','--host','127.0.0.1','--port','8766','--workers','1','--no-access-log'],cwd=ROOT,stdin=subprocess.DEVNULL,stdout=output,stderr=output,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
         (data/'server.pid').write_text(str(child.pid),encoding='ascii')
         for _ in range(30):
-            if healthy():break
+            if running_health():break
             if child.poll() is not None:break
             time.sleep(.5)
-        if not healthy():
+        if not running_health():
             print('Could not start. Check data/server.log. The port may already be used.')
             return 1
     print(f'Workbench: {URL}')

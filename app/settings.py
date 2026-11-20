@@ -1,6 +1,6 @@
 from pathlib import Path
 import os, yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 ROOT = Path(__file__).resolve().parents[1]
 class Settings(BaseModel):
@@ -21,6 +21,16 @@ class Settings(BaseModel):
     public_mode: bool = False
     occupation_templates: Path | None = None
     public_host: str = ''
+    offerdao_base: str = 'https://offerdao.ai'
+    offerdao_api_key: SecretStr | None = None
+    cloudflare_account_id: str = ''
+    cloudflare_api_token: SecretStr | None = None
+    cloudflare_agent_enabled: bool = False
+    cloudflare_model: str = '@cf/qwen/qwen3.8-27b'
+    cloudflare_timeout: float = Field(9, ge=1, le=20)
+    cloudflare_daily_drafts: int = Field(100, ge=1, le=200)
+    cloudflare_visitor_hourly_drafts: int = Field(12, ge=1, le=100)
+    cloudflare_local_hourly_drafts: int = Field(30, ge=1, le=200)
     public_sessions: int = Field(32, ge=2, le=256)
     agent_searches: int = Field(3, ge=1, le=5)
     agent_reads: int = Field(10, ge=1, le=25)
@@ -64,5 +74,28 @@ class Settings(BaseModel):
         cfg['public_host'] = os.getenv('PUBLIC_HOST') or os.getenv('RENDER_EXTERNAL_HOSTNAME', '')
         if os.getenv('OCCUPATION_TEMPLATES'):
             cfg['occupation_templates'] = Path(os.environ['OCCUPATION_TEMPLATES'])
+        cfg['offerdao_base'] = os.getenv('OFFERDAO_BASE') or 'https://offerdao.ai'
+        cfg['offerdao_api_key'] = os.getenv('OFFERDAO_API_KEY') or None
+        for env, key in {
+            'CLOUDFLARE_ACCOUNT_ID':'cloudflare_account_id',
+            'CLOUDFLARE_API_TOKEN':'cloudflare_api_token',
+            'CLOUDFLARE_MODEL':'cloudflare_model',
+            'CLOUDFLARE_AGENT_ENABLED':'cloudflare_agent_enabled',
+        }.items():
+            if os.getenv(env):
+                cfg[key] = os.environ[env]
+        for env, key, convert, lower, upper in (
+            ('CLOUDFLARE_TIMEOUT','cloudflare_timeout',float,1,20),
+            ('CLOUDFLARE_DAILY_DRAFTS','cloudflare_daily_drafts',int,1,200),
+            ('CLOUDFLARE_VISITOR_HOURLY_DRAFTS','cloudflare_visitor_hourly_drafts',int,1,100),
+            ('CLOUDFLARE_LOCAL_HOURLY_DRAFTS','cloudflare_local_hourly_drafts',int,1,200),
+        ):
+            if raw := os.getenv(env):
+                try:
+                    candidate = convert(raw)
+                    if lower <= candidate <= upper:
+                        cfg[key] = candidate
+                except ValueError:
+                    pass
         if os.getenv('APP_DATA_DIR'): cfg['data_dir']=Path(os.environ['APP_DATA_DIR'])
         return cls(**cfg)

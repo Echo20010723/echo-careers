@@ -8,6 +8,12 @@
 !app/static/*.css
 !app/static/*.js
 !app/static/echo-logo.png
+!app/static/echo-logo-small.png
+!app/static/hero-grain.png
+!app/static/geist-pixel-circle.woff2
+!app/static/geist-pixel-OFL.txt
+!app/static/quicksand-latin-700.woff2
+!app/static/quicksand-OFL.txt
 !app/static/resume-demo.md
 !app/static/jobs-example.json
 !config/

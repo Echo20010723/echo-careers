@@ -2,6 +2,15 @@ import json
 from pathlib import Path
 CATALOG=json.loads((Path(__file__).resolve().parents[1]/'config/error_messages.json').read_text(encoding='utf-8'))['messages']
 EXTRA={
+'OFFERDAO_NOT_CONFIGURED':(503,'Offer岛尚未配置个人 API Key。可切换海外来源或粘贴 JD。'),
+'OFFERDAO_AUTH':(401,'Offer岛 API Key 无效，请检查个人 Key。'),
+'OFFERDAO_FORBIDDEN':(403,'当前 Offer岛 API Key 没有查询权限。'),
+'OFFERDAO_DAILY_LIMIT':(429,'Offer岛测试 Key 今日额度已用尽，请配置个人 Key。'),
+'OFFERDAO_RATE_LIMIT':(429,'Offer岛查询频率受限，请稍后手动重试。'),
+'OFFERDAO_FILTER':(400,'Offer岛未接受当前筛选或页码，请调整条件后从第一页重新搜索。'),
+'OFFERDAO_TIMEOUT':(504,'Offer岛响应超时。可稍后重试或粘贴 JD。'),
+'OFFERDAO_NETWORK':(502,'无法连接 Offer岛，请稍后重试。'),
+'OFFERDAO_UPSTREAM':(502,'Offer岛暂不可用或响应格式异常。'),
 'ONLINE_SEARCH_NOT_CONFIGURED':(503,'此来源当前不可用，请切换招聘来源或检查配置。'),
 'ONLINE_SOURCE_NOT_FOUND':(404,'未找到该招聘板或来源。'),
 'GREENHOUSE_BOARDS_UNAVAILABLE':(502,'所选企业招聘板暂不可用。'),

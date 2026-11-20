@@ -13,16 +13,50 @@ async function api(path,method='GET',body) {
 async function run(fn,button,workingText){busy++;const old=button?.textContent;try{if(button){button.disabled=true;button.setAttribute('aria-busy','true');if(workingText)button.textContent=workingText;}await fn();await refresh();}catch(e){notice(e.message,true);}finally{busy--;if(button){button.disabled=false;button.removeAttribute('aria-busy');if(workingText)button.textContent=old;}}}
 function action(label,fn,cls='secondary'){const b=el('button',label,cls);b.onclick=()=>run(fn,b);return b;}
 function list(id,items,render,empty='暂无记录'){const n=$(id);n.replaceChildren();if(!items.length)n.append(el('p',empty,'empty'));else items.forEach(x=>n.append(render(x)));}
-function tab(id){
- document.querySelectorAll('.tab').forEach(section=>section.classList.toggle('active',section.id===id));
- document.querySelectorAll('nav button').forEach(button=>{
-  const active=button.dataset.tab===id;
-  button.classList.toggle('active',active);
-  if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
- });
- if(id!=='discovery') refresh(!initialized).catch(e=>notice(e.message,true));
+const mainNav = document.querySelector('.site-header nav');
+const navButtons = [...mainNav.querySelectorAll('button[data-tab]')];
+const routeTabs = new Set(navButtons.map(button => button.dataset.tab));
+const pageScroll = new Map();
+let tabMotion;
+function positionNavIndicator() {
+  const button = mainNav.querySelector('[aria-current="page"]');
+  if (!button) return;
+  mainNav.style.setProperty('--nav-width', Math.max(0,button.offsetWidth-10)+'px');
+  mainNav.style.setProperty('--nav-offset', (button.offsetLeft+5)+'px');
 }
-document.querySelectorAll('nav button').forEach(n=>n.onclick=()=>tab(n.dataset.tab));
+function tab(id, {updateHistory = true} = {}) {
+  if (!routeTabs.has(id)) return;
+  const old = document.querySelector('.tab.active');
+  if (old?.id === id) { positionNavIndicator(); return; }
+  if (old) pageScroll.set(old.id,window.scrollY);
+  tabMotion?.cancel();
+  document.querySelectorAll('.tab').forEach(section=>section.classList.toggle('active',section.id===id));
+  for (const button of navButtons) {
+    const active = button.dataset.tab === id;
+    button.classList.toggle('active',active);
+    if (active) button.setAttribute('aria-current','page');
+    else button.removeAttribute('aria-current');
+  }
+  positionNavIndicator();
+  if (updateHistory) history.pushState(null,'',id === 'discovery' ? location.pathname+location.search : '#'+id);
+  window.scrollTo({top:pageScroll.get(id)||0,behavior:'instant'});
+  if (matchMedia('(min-width: 821px) and (prefers-reduced-motion: no-preference)').matches) {
+    tabMotion = $(id).animate([{opacity:.76,transform:'translateY(4px)'},{opacity:1,transform:'none'}],
+      {duration:185,easing:'ease-out'});
+  }
+  if (id !== 'discovery') refresh(!initialized).catch(error => {
+    if ($(id).classList.contains('active')) notice(error.message,true);
+  });
+}
+function syncTabLocation() {
+  const requested = location.hash.slice(1);
+  tab(routeTabs.has(requested) ? requested : 'discovery',{updateHistory:false});
+}
+navButtons.forEach(button => button.onclick = () => tab(button.dataset.tab));
+new ResizeObserver(positionNavIndicator).observe(mainNav);
+window.addEventListener('popstate',syncTabLocation);
+window.addEventListener('hashchange',syncTabLocation);
+syncTabLocation();
 function details(title,key){const d=el('details');d.dataset.key=key;d.append(el('summary',title));return d;}
 function jobData(row){return JSON.parse(row.payload);}
 function isDemoJob(row){return (jobData(row).title||'').startsWith('界面验收 · ')||jobData(row).source?.startsWith('mock')||state.conversations.some(c=>c.job_id===row.id&&c.channel==='mock')&&!state.conversations.some(c=>c.job_id===row.id&&c.channel==='boss');}
@@ -31,7 +65,7 @@ function matchingDetails(result,key){const d=details('查看匹配依据',key),i
  for(const x of [...info.skill_evidence,...info.project_evidence]){const n=el('div',undefined,'evidence');n.append(el('p',x.requirement+' · '+({demonstrated:'有材料支持',partial:'部分支持',not_evidenced:'简历未体现'}[x.status])),el('p',x.evidence||'需要补充事实依据。','muted'));d.append(n);}
  for(const x of info.eligibility_checks.filter(x=>x.status!=='met'))d.append(el('p','待核对：'+x.condition));return d;}
 function jobCard(row){const p=jobData(row),a=row.analysis?JSON.parse(row.analysis):null,n=el('div',undefined,'row'),h=el('div',undefined,'job-heading');h.append(el('h3',p.title||'导入的岗位'),el('span',a?Math.round(a.match_score*100)+'/100':'处理中','score'));n.append(h,el('p',[p.company,p.location,p.salary].filter(Boolean).join(' · '),'muted'));if(isDemoJob(row))n.append(el('span','演示岗位','pill demo'));if(a){n.append(el('span',a.score_detail.recommendation,'pill'),matchingDetails(a,'match-'+row.id));}return n;}
-async function showConversation(cid){selected=cid;const data=await api('/api/conversations/'+cid);$('conversation-detail').replaceChildren();for(const m of data.messages.slice(-3))$('conversation-detail').append(el('div',m.text,'message incoming'));renderOutbox();$('demo-controls').hidden=data.conversation.channel!=='mock';}
+async function showConversation(cid){selected=cid;const data=await api('/api/conversations/'+cid);if(selected!==cid)return;$('conversation-detail').replaceChildren();for(const m of data.messages.slice(-3))$('conversation-detail').append(el('div',m.text,'message incoming'));renderOutbox();$('demo-controls').hidden=data.conversation.channel!=='mock';}
 function renderOutbox(){const rows=state.outbox.filter(x=>x.conversation_id===selected);list('outbox',rows.slice(0,3),x=>{const n=el('div',undefined,'message');n.append(el('small',statusNames[x.status]||x.status),el('div',x.text));if(['draft','blocked'].includes(x.status))n.append(action('复制草稿',async()=>{await navigator.clipboard.writeText(x.text);notice('已复制草稿。');},'text-button'));const c=state.conversations.find(c=>c.id===x.conversation_id);if(c?.channel==='mock')n.append(el('span','演示内容','pill demo'));if(x.status==='unknown')n.append(action('核实发送结果',()=>api('/api/outbox/'+x.id+'/reconcile','POST')));return n;},selected?'暂无待处理内容':'选择一个会话查看草稿');}
 async function refresh(initial=false){if(refreshing)return;refreshing=true;const opened=[...document.querySelectorAll('details[open][data-key]')].map(n=>n.dataset.key);try{
  state=await api('/api/state');const visibleJobs=state.jobs.filter(j=>isDemoJob(j)===(state.active_channel==='mock'));const visibleConversations=state.conversations.filter(c=>c.channel===state.active_channel&&c.resume_id===state.current_resume&&visibleJobs.some(j=>j.id===c.job_id));
@@ -77,7 +111,7 @@ $('start').onclick=()=>run(async()=>{
 },$('start'));
 $('pause').onclick=()=>run(()=>api('/api/task','POST',{action:'pause'}),$('pause'));
 $('demo').onclick=()=>run(async()=>{await api('/api/assistant/demo','POST');selected=null;tab('assistant');notice('模拟演示已启动。');},$('demo'));
-$('upload-form').onsubmit=e=>{e.preventDefault();run(async()=>{const f=new FormData();f.append('file',$('resume-file').files[0]);await api('/api/resumes','POST',f);notice('简历已更新，后续分析和回复会使用这份资料。');});};
+$('upload-form').onsubmit=e=>{e.preventDefault();run(async()=>{const f=new FormData();f.append('file',$('resume-file').files[0]);const {id,name}=await api('/api/resumes','POST',f);$('upload-form').dispatchEvent(new CustomEvent('resume-uploaded',{detail:{id,name}}));notice('简历已更新，后续分析和回复会使用这份资料。');});};
 $('preferences-form').onsubmit=e=>{e.preventDefault();const split=x=>x.split(/[,，\n]/).map(x=>x.trim()).filter(Boolean);run(async()=>{await api('/api/preferences','PUT',{cities:split($('cities').value),keywords:split($('keywords').value),remote_acceptable:$('remote').checked,salary_daily:[+$('daily-min').value,+$('daily-max').value],salary_monthly:[+$('monthly-min').value,+$('monthly-max').value]});notice('偏好已保存。');});};
 $('job-form').onsubmit=e=>{e.preventDefault();run(async()=>{await api('/api/jobs/import','POST',{jobs:[{title:$('job-title').value||null,location:$('job-city').value||null,company:$('job-company').value||null,source_url:$('job-url').value||null,raw_jd:$('job-jd').value,source:'manual'}]});notice(state.task==='paused'?'岗位已保存，点击开始后自动匹配。':'岗位已加入自动处理，无需再点匹配或创建会话。');});};
 $('jobs-file').onchange=()=>run(async()=>{

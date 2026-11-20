@@ -21,7 +21,8 @@ AGENT_FALLBACK = {
     'upstream_quota': 'Cloudflare Workers AI 额度已用完。',
     'upstream_limit': 'Cloudflare Workers AI 暂时限流。',
     'timeout': 'Cloudflare Workers AI 响应超时。',
-    'provider_error': 'Cloudflare Workers AI 请求失败，请检查凭据与服务状态。',
+    'provider_auth': 'Cloudflare 拒绝认证，请检查账户 ID 和 Workers AI 推理权限。',
+    'provider_error': 'Cloudflare Workers AI 请求失败，请检查模型与服务状态。',
     'invalid_output': 'Cloudflare Workers AI 返回了无效动作。',
 }
 
@@ -39,6 +40,8 @@ class WorkersDrafts:
         self.account = settings.cloudflare_account_id.strip()
         self.token = settings.cloudflare_api_token
         self.model = settings.cloudflare_model.strip()
+        self.agent_enabled = (settings.cloudflare_agent_enabled if settings.cloudflare_agent_enabled is not None
+                              else settings.public_mode and self.configured)
         self.daily_limit = settings.cloudflare_daily_drafts
         self.public_hourly = settings.cloudflare_visitor_hourly_drafts
         self.local_hourly = settings.cloudflare_local_hourly_drafts
@@ -54,6 +57,7 @@ class WorkersDrafts:
         self.cache = OrderedDict()
         self.cooldown = 0.0
         self.cooldown_reason = None
+        self.last_http_error = None
 
     def close(self):
         self.client.close()
@@ -78,6 +82,7 @@ class WorkersDrafts:
                       'usage_reported', 'upstream_ms', 'agent_attempts', 'agent_succeeded')
             return {'day_utc':self.day.isoformat(), 'configured':self.configured,
                     'public_hourly_limit':self.public_hourly, 'daily_limit':self.daily_limit,
+                    'last_http_error':self.last_http_error,
                     **{name:self.stats[name] for name in fields}}
 
     def _reserve(self, scope, public):
@@ -201,6 +206,18 @@ class WorkersDrafts:
                 with self.lock:
                     self.cooldown = monotonic() + delay
                     self.cooldown_reason = reason
+                return (None, reason), usage
+            if response.is_error:
+                upstream_code = None
+                try:
+                    candidate = response.json()['errors'][0]['code']
+                    if type(candidate) is int:
+                        upstream_code = candidate
+                except (ValueError, KeyError, TypeError, IndexError):
+                    pass
+                with self.lock:
+                    self.last_http_error = {'status':response.status_code, 'code':upstream_code}
+                reason = 'provider_auth' if response.status_code in {401, 403} else 'provider_error'
                 return (None, reason), usage
             response.raise_for_status()
             envelope = response.json()

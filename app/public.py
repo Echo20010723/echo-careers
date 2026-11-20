@@ -74,7 +74,7 @@ def create_public_app(settings, factory, offerdao, workers_drafts):
                                      'model_mode':settings.model_mode, 'draft_usage':workers_drafts.usage(),
                                      'runtime_revision':revision,
                                      'agent_provider':('cloudflare' if workers_drafts.configured else None)
-                                         if settings.cloudflare_agent_enabled else
+                                         if workers_drafts.agent_enabled else
                                          ('openai' if settings.model_mode == 'live' and os.getenv('OPENAI_API_KEY') else None),
                                      'model_configured':settings.model_mode == 'mock' or bool(os.getenv('OPENAI_API_KEY'))}))
 

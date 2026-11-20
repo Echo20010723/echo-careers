@@ -25,7 +25,7 @@ class Settings(BaseModel):
     offerdao_api_key: SecretStr | None = None
     cloudflare_account_id: str = ''
     cloudflare_api_token: SecretStr | None = None
-    cloudflare_agent_enabled: bool = False
+    cloudflare_agent_enabled: bool | None = None
     cloudflare_model: str = '@cf/qwen/qwen3.8-27b'
     cloudflare_timeout: float = Field(9, ge=1, le=20)
     cloudflare_daily_drafts: int = Field(100, ge=1, le=200)

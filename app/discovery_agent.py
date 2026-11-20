@@ -92,7 +92,7 @@ class DiscoveryAgent:
             db.execute("UPDATE agent_runs SET status='interrupted' WHERE status='running'")
 
     def model_provider(self):
-        if self.service.settings.cloudflare_agent_enabled:
+        if self.workers and self.workers.agent_enabled:
             return 'cloudflare' if self.workers and self.workers.configured else None
         return None if self.service.provider.simulated else 'openai'
 

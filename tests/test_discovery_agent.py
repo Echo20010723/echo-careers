@@ -141,7 +141,7 @@ def test_public_workers_agent_observes_jd_and_shares_request_budget(tmp_path, mo
 
     monkeypatch.setattr(WorkersDrafts, 'transport', MockTransport(infer))
     monkeypatch.setattr('app.discovery_agent.Himalayas.page', search)
-    settings = Settings(data_dir=tmp_path, public_mode=True, cloudflare_agent_enabled=True,
+    settings = Settings(data_dir=tmp_path, public_mode=True,
                         cloudflare_account_id='a'*32, cloudflare_api_token='test-token',
                         cloudflare_daily_drafts=6)
     with TestClient(create_app(settings)) as client:

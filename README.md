@@ -22,7 +22,7 @@ python scripts/smoke_public.py http://127.0.0.1:8766
 3. 预览应显示一个 `echo-careers` Web Service，运行时 **Docker**，实例类型 **Free**，构建上下文 `.`，Dockerfile 路径 `./Dockerfile`，健康检查 `/health`。点击 **Deploy Blueprint**。
 4. 默认环境为 `PUBLIC_MODE=true`、`MODEL_MODE=mock`、`APP_DATA_DIR=/app/data`、`MODEL_TIMEOUT=12`。Blueprint 自动生成 `PUBLIC_SESSION_SECRET`。Render 注入 `PORT` 和 `RENDER_EXTERNAL_HOSTNAME`。如使用自定义域名，通过 `PUBLIC_HOST` 填实际主机名，不含协议。
 5. 部署状态为 Live 后，访问 Dashboard 显示的 HTTPS 首页及同域 `/health`。健康接口应返回 `status: ok`、`public: true` 和正确的模型模式。可执行 `python scripts/smoke_public.py https://你的服务.onrender.com`。构建失败看服务的 **Deploys** 对应部署日志，启动或运行失败看 **Logs**。
-6. 在现有 Render 服务的 **Environment** 设置 `CLOUDFLARE_AGENT_ENABLED=true`、`CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。新建 Blueprint 时已默认启用 Agent 开关，两个凭据由 Render 提示填写。使用 Workers Free 账户生成仅用于 Workers AI 推理的 Token。保留 `MODEL_MODE=mock`，常规匹配继续用本地规则，在线 Agent 和草稿分别按 Cloudflare 配置工作。未配置、超时、上游拒绝、无效动作或额度耗尽时，在线 Agent 记录原因并继续按规则处理。
+6. 在现有 Render 服务的 **Environment** 设置 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。新建 Blueprint 时已默认启用 Agent 开关，两个凭据由 Render 提示填写。已存在的公开服务保存两项凭据后会自动启用，也可用 `CLOUDFLARE_AGENT_ENABLED=false` 单独关闭 Agent。使用 Workers Free 账户生成仅用于 Workers AI 推理的 Token。保留 `MODEL_MODE=mock`，常规匹配继续用本地规则，在线 Agent 和草稿分别按 Cloudflare 配置工作。未配置、超时、上游拒绝、无效动作或额度耗尽时，在线 Agent 记录原因并继续按规则处理。
 
 [Blueprint 官方步骤](https://render.com/docs/infrastructure-as-code) · [Docker Web Service](https://render.com/docs/docker) · [Render 日志](https://render.com/docs/logging)
 
@@ -79,7 +79,7 @@ Himalayas 有申请 URL 时可直接点击「前往申请」，也可展开「�
 | `MODEL_TIMEOUT` | Blueprint 默认 `12` |
 | `OFFERDAO_API_KEY` | 可选，启用 Offer岛时用个人 Key |
 | `OFFERDAO_BASE` | 可选，默认 `https://offerdao.ai` |
-| `CLOUDFLARE_AGENT_ENABLED` | `true` 启用在线 Agent 的 Cloudflare 决策。本地默认关闭 |
+| `CLOUDFLARE_AGENT_ENABLED` | `true` 显式启用；公开环境配置有效凭据后自动启用，本地默认关闭 |
 | `CLOUDFLARE_ACCOUNT_ID` | Workers AI 账户 ID |
 | `CLOUDFLARE_API_TOKEN` | Workers AI REST API Token，启用云端草稿时填写 |
 | `CLOUDFLARE_MODEL` | 可选，默认 `@cf/qwen/qwen3.8-27b` |

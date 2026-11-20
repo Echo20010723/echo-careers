@@ -74,12 +74,26 @@ def parse_card(card, base, types):
         entries = [(None, {key:card.get(key) for key in ('role','employment_type')})]
 
     parent_emails = recruiting_emails(card.get('contact_email'))
-    shared = any(
+    contact_notes = [
+        line for field in ('intro', 'description', 'requirements')
+        for line in (plain(card.get(field), 12000) or '').splitlines()
+    ]
+    separate_contacts = any(
+        re.search(r'(?:分别|各自).{0,12}(?:投递|邮箱|联系方式)|(?:不同|专属).{0,10}(?:邮箱|联系方式)|'
+                  r'(?:邮箱|联系方式).{0,12}(?:仅限|仅适用|专属)', line)
+        for line in contact_notes
+    )
+    explicitly_shared = any(
         re.search(r'(?:所有岗位|各岗位|以上岗位|上述岗位|以下岗位|各职位|两个岗位|多个岗位).{0,28}(?:统一|共用|同一|均可?投递至|均发送至)|统一.{0,8}(?:投递邮箱|招聘邮箱|收件邮箱)', line)
         and not re.search(r'分别|不同|各自|仅限|专属', line)
-        for field in ('intro', 'description', 'requirements')
-        for line in (plain(card.get(field), 12000) or '').splitlines()
+        for line in contact_notes
     )
+    # In the documented API shape, positions have no contact fields. The card owns the
+    # recruitment email. If individual contact fields exist, require explicit shared scope.
+    contact_fields = {'contact_email', 'contact_link', 'contact_wechat', 'contact_xiaohongshu'}
+    has_individual_contacts = any(contact_fields.intersection(row) for index, row in entries if index is not None)
+    official_card_contact = card.get('review_status') == 'approved' and not has_individual_contacts
+    shared_emails = parent_emails if not separate_contacts and (explicitly_shared or official_card_contact) else []
     result = []
     for index, row in entries:
         raw_types = row.get('employment_type')
@@ -98,7 +112,7 @@ def parse_card(card, base, types):
             source='offerdao', source_id=posting_id if index is None else f'{posting_id}:{index}',
             posting_id=posting_id, url=f'{base}/j/{posting_id}',
             original_source_url=source_url(card.get('source_url')),
-            contact_emails=recruiting_emails(row.get('contact_email')) or (parent_emails if index is not None and shared else []),
+            contact_emails=recruiting_emails(row.get('contact_email')) or (shared_emails if index is not None else []),
             application_url=application_link(row.get('contact_link')),
             title=plain(row.get('role'), 300), company=plain(card.get('organization'), 300),
             team=plain(card.get('team'), 300), city=plain(card.get('location'), 300),

@@ -53,7 +53,7 @@ Windows 本地可使用项目根目录的 `Career_Workbench_Resume_JD_Benchmark/
 1. 上传简历或选用示例。在「岗位来源」选择「国内 AI 岗位 · Offer岛」，填写关键词、城市和岗位类型。
 2. 搜索后可翻页、打开 Offer岛原帖或发布方来源。关键词保留来源的空格 AND 语义。按类型筛选时，Offer岛只检查卡片第一个子岗位。若要查混合卡片中的实习，可以取消类型筛选，再核对子岗位。
 3. 有简历时搜索会自动匹配本页，分析结束后按证据档位和分数排序。也可以先浏览 Offer岛，再在岗位详情添加简历。无法加载岗位时可切回 Himalayas，或点「更多方式 → 粘贴 JD」。
-4. 本地工作台可用来源明确的招聘邮箱撰写投递邮件，发送前手动附上简历。公开工作台引导访客在 Offer岛原帖查看邮箱。来源链接和职位投递链接分别展示。 [岗位字段](https://offerdao.ai/skill/references/posting-fields.md)
+4. 本地工作台可用来源明确的招聘邮箱撰写投递邮件，发送前手动附上简历。公开工作台可从 Offer岛原帖复制招聘邮箱后，点「粘贴招聘邮箱」填入邮件草稿。来源链接和职位投递链接分别展示。 [岗位字段](https://offerdao.ai/skill/references/posting-fields.md)
 
 接口联调可运行 `python -m pytest -q tests/test_offerdao.py`。测试 Key 的每日额度和查询频率限制会分别提示，程序不自动重试、不领取共享测试 Key。
 

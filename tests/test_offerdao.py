@@ -73,7 +73,7 @@ def test_empty_and_optional_fields_with_public_scope(tmp_path, monkeypatch):
     def respond(request):
         requests.append(request)
         rows = [{'posting_id':'solo','role':'算法','description':'部署模型',
-                 'source_url':'javascript:alert(1)','positions':None},
+                 'source_url':'javascript:alert(1)','positions':None,'contact_email':'recruiting@example.org'},
                 {'posting_id':'bad_positions','positions':'{invalid','description':'混合正文'},
                 {'posting_id':'array','positions':[None,{'role':'独立子岗位','requirements':'掌握 Python'}]},
                 {'posting_id':'../private','role':'危险标识'}]
@@ -89,6 +89,7 @@ def test_empty_and_optional_fields_with_public_scope(tmp_path, monkeypatch):
         assert first.status_code==200
         solo, malformed, child=first.json()['jobs']
         assert solo['url'].endswith('/j/solo') and solo['original_source_url'] is None
+        assert solo['contact_emails'] == []
         assert solo['company'] is None and solo['salary_raw'] is None and solo['published_at'] is None
         assert malformed['jd'] is None and child['source_id']=='array:1'
         assert child['jd']=='任职要求：掌握 Python'
@@ -203,6 +204,31 @@ def test_shared_email_requires_explicit_scope_and_accepts_multiple_public_addres
     card['description'] = '各岗位请分别投递不同邮箱。'
     a, _ = parse_card(card, 'https://offerdao.ai', set())
     assert a.contact_emails == []
+
+
+def test_platform_card_email_applies_to_children_without_individual_contacts():
+    from app.offerdao import parse_card
+    card = {
+        'posting_id':'multi-company', 'review_status':'approved',
+        'intro':'团队介绍。工作地点可选上海或远程。',
+        'contact_email':'careers@example.org',
+        'positions':json.dumps([
+            {'role':'模型部署实习生', 'description':'开发部署工具。'},
+            {'role':'算法研究实习生', 'description':'开展算法研究。'},
+        ], ensure_ascii=False),
+    }
+
+    jobs = parse_card(card, 'https://offerdao.ai', set())
+    assert [job.contact_emails for job in jobs] == [['careers@example.org'], ['careers@example.org']]
+
+    assert all(not job.contact_emails for job in parse_card(
+        {**card, 'intro':'请为各岗位分别投递不同邮箱。'}, 'https://offerdao.ai', set()))
+    assert all(not job.contact_emails for job in parse_card(
+        {**card, 'contact_email':'c***@example.org'}, 'https://offerdao.ai', set()))
+    assert all(not job.contact_emails for job in parse_card(
+        {**card, 'positions':'broken'}, 'https://offerdao.ai', set()))
+    assert all(not job.contact_emails for job in parse_card(
+        {**card, 'review_status':None}, 'https://offerdao.ai', set()))
 
 
 def test_offerdao_manual_query_is_forwarded_verbatim(tmp_path, monkeypatch):

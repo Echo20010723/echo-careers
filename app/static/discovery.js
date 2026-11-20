@@ -1271,7 +1271,10 @@
       recipient.type = 'email';
       recipient.maxLength = 254;
       recipient.placeholder = '可从原帖核对后填写';
-      panel.append(el('p','岗位未提供可展示的招聘邮箱，可去原帖核对。','muted'));
+      const help = job.source === 'offerdao' && document.body.classList.contains('public-workbench')
+        ? '如原帖提供招聘邮箱，请在 Offer 岛登录查看并复制，再回这里粘贴。'
+        : '岗位未提供可展示的招聘邮箱，可去原帖核对。';
+      panel.append(el('p', help, 'muted'));
     }
     recipientLabel.append(recipient);
     const signature = el('input');
@@ -1292,9 +1295,11 @@
     const guidance = el('div',undefined,'muted');
     const controls = el('div', undefined, 'actions');
     const client = el('a','打开邮件客户端','button-link secondary');
+    const validRecipient = address => address.length <= 254 &&
+      /^[A-Za-z0-9_+%-]+(?:\.[A-Za-z0-9_+%-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(address);
     const updateLink = () => {
       const address = recipient.value.trim();
-      const valid = /^[^\s,@?&#]+@[^\s,@?&#]+\.[^\s,@?&#]+$/.test(address);
+      const valid = validRecipient(address);
       if (!valid) client.removeAttribute('href');
       else client.href = 'mailto:'+encodeURIComponent(address).replace('%40','@')+
         '?subject='+encodeURIComponent(subject.value)+'&body='+encodeURIComponent(body.value);
@@ -1386,6 +1391,24 @@
       links.append(...[original,source].filter(Boolean));
       const manual = el('details');
       manual.append(el('summary','手动填写邮箱'),recipientLabel,signatureLabel,actions,editor,status);
+      if (job.source === 'offerdao') {
+        links.append(button('粘贴招聘邮箱', async () => {
+          manual.open = true;
+          try {
+            const address = (await navigator.clipboard.readText()).trim();
+            if (!validRecipient(address)) {
+              status.textContent = '剪贴板里没有有效的单个邮箱。请从原帖复制邮箱后再试。';
+            } else {
+              recipient.value = address;
+              recipient.dispatchEvent(new Event('input'));
+              status.textContent = '已粘贴招聘邮箱，可继续写投递邮件。';
+            }
+          } catch {
+            status.textContent = '无法读取剪贴板，请在收件人栏手动粘贴。';
+          }
+          recipient.focus();
+        }));
+      }
       panel.append(links,manual);
     }
     return panel;

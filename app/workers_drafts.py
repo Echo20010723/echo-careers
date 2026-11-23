@@ -12,6 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from .policy import unsafe_instruction
+from .discovery_rules import skill_hits
 
 
 AGENT_FALLBACK = {
@@ -149,7 +150,7 @@ class WorkersDrafts:
                 self._record(day, started, result, usage, agent=True)
         return *result, True
 
-    def generate(self, payload, instructions, *, scope, public, cache_key, regeneration_id=None):
+    def generate(self, payload, instructions, *, scope, public, cache_key, regeneration_id=None, trace):
         if not self.configured:
             return None, 'not_configured'
         if not payload['evidence']:
@@ -159,7 +160,9 @@ class WorkersDrafts:
         with self.lock:
             if lookup in self.cache:
                 self.cache.move_to_end(lookup)
-                return self.cache[lookup]
+                result, upstream = self.cache[lookup]
+                trace.update(upstream, source='cache_hit')
+                return result
             existing = self.pending.get(key)
             if existing is None:
                 day = self._roll_day()
@@ -168,25 +171,29 @@ class WorkersDrafts:
                 future = self.pending[key] = Future()
 
         if existing is not None:
-            result = existing.result()
+            result, upstream = existing.result()
+            trace.update(upstream, source='coalesced')
             if regeneration_id:
                 with self.lock:
-                    self._remember(lookup, result)
+                    self._remember(lookup, (result, upstream))
             return result
 
         started = monotonic()
         # The default is also used to release concurrent waiters if an unexpected error propagates.
         result, usage = (None, 'provider_error'), None
+        upstream = {}
         try:
-            result, usage = self._request(payload, instructions)
+            result, usage = self._request(payload, instructions, max_tokens=620, upstream=upstream)
         finally:
             with self.lock:
                 self._record(day, started, result, usage)
-                self._remember((key, None), result)
+                saved = (result, upstream)
+                self._remember((key, None), saved)
                 if regeneration_id:
-                    self._remember(lookup, result)
-                future.set_result(result)
+                    self._remember(lookup, saved)
+                future.set_result(saved)
                 self.pending.pop(key)
+        trace.update(upstream, source='fresh' if result[0] else 'fallback', attempted=True)
         return result
 
     def _remember(self, key, result):
@@ -195,7 +202,7 @@ class WorkersDrafts:
         if len(self.cache) > 2048:
             self.cache.popitem(last=False)
 
-    def _request(self, payload, instructions, *, schema=Narrative, timeout=None, max_tokens=384):
+    def _request(self, payload, instructions, *, schema=Narrative, timeout=None, max_tokens=384, upstream=None):
         usage = None
         try:
             endpoint = f'https://api.cloudflare.com/client/v4/accounts/{self.account}/ai/v1/chat/completions'
@@ -213,6 +220,8 @@ class WorkersDrafts:
                 body['chat_template_kwargs'] = {'enable_thinking':False}
             response = self.client.post(endpoint, **request_options, json=body,
                 headers={'Authorization':'Bearer '+self.token.get_secret_value().strip()})
+            if upstream is not None:
+                upstream['http_status'] = response.status_code
             if response.status_code in {402, 429}:
                 hint = response.headers.get('Retry-After', '')
                 delay = min(900, int(hint)) if hint.isascii() and hint.isdigit() and len(hint) <= 6 else 60
@@ -234,6 +243,9 @@ class WorkersDrafts:
                 reason = 'provider_auth' if response.status_code in {401, 403} else 'provider_error'
                 return (None, reason), usage
             envelope = response.json()
+            reported_model = envelope.get('model')
+            if upstream is not None and isinstance(reported_model, str) and re.fullmatch(r'[A-Za-z0-9@/_.:-]{1,120}', reported_model):
+                upstream['response_model'] = reported_model
             metadata = envelope.get('usage')
             if isinstance(metadata, dict):
                 counts = (metadata.get('prompt_tokens'), metadata.get('completion_tokens'))
@@ -277,12 +289,31 @@ def supported(narrative, payload):
         return False
     body = narrative.body
     if unsafe_instruction(body) or re.search(
-        r'[@<>]|\d{2,}|https?://|\d\s*[%％天月年]|到岗|出勤|附件|可实习|署名|'
+        r'[@<>]|https?://|到岗|出勤|附件|可实习|署名|'
         r'\b(?:availability|available to start|days per week|attached|sincerely)\b', body, re.I
     ):
         return False
+    # Numeric claims are allowed only when their complete literal occurs in cited evidence.
+    cited_quotes = ' '.join(item.get('quote', '') for item in payload['evidence'] if item['id'] in ids)
+    numeric_claim = r'(?<![\d.])\d+(?:\.\d+)?\s*(?:[%％]|年|个月|天|次|hours?\b|years?\b|months?\b)|\d{2,}(?:\.\d+)?'
+    canon = lambda value: re.sub(r'\s+', '', value).replace('％','%').casefold()
+    known_numbers = {canon(match.group()) for match in re.finditer(numeric_claim,cited_quotes,re.I)}
+    if any(canon(match.group()) not in known_numbers for match in re.finditer(numeric_claim,body,re.I)):
+        return False
+    # A detail present only in a vacancy can describe the role, not past experience.
+    prior_work = re.compile(r'做过|负责过|维护过|曾|过往|此前|我(?:使用|用|实现|开发|维护|参与|管理)|'
+                            r'\bI (?:have |previously )?(?:built|developed|used|maintained|deployed|managed|worked|implemented)\b', re.I)
+    for sentence in re.split(r'[。；;\n]+|[.!?](?=\s)', body):
+        if not prior_work.search(sentence):
+            continue
+        tools = skill_hits(sentence) + re.findall(r'\b(?:Jenkins|Ansible|Terraform|Kubernetes|Shell|Bash|CI/CD|Dockerfile|Harbor|Prometheus|Grafana|Loki|PromQL|Filebeat|Zabbix)\b', sentence,re.I)
+        if any(tool.casefold() not in cited_quotes.casefold() for tool in tools):
+            return False
+    if re.search(r'^(?:Dear\b|Hi\b|Hello\b|您好|尊敬|Best regards|Regards\b|此致|敬礼)|'
+                 r'\b(?:I am authorized to work|I do not require sponsorship)\b|无需签证|有工作许可', body, re.I | re.M):
+        return False
     if payload.get('kind') == 'statement':
-        if re.search(r'^(?:Dear\b|Hi\b|Hello\b|您好|尊敬|Best regards|Regards\b|此致|敬礼)|谢谢您的考虑|感谢您审阅', body, re.I | re.M):
+        if re.search(r'谢谢您的考虑|感谢您审阅', body):
             return False
         if len(re.split(r'\n\s*\n', body)) > 2:
             return False

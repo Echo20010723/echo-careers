@@ -206,7 +206,17 @@ def create_app(settings=None, *, _public_scope=False, _offerdao=None, _workers_d
 
     @app.post('/api/discovery/drafts')
     def create_discovery_draft(data: DraftInput):
-        return discovery_drafts.create(data)
+        started = time.monotonic()
+        result = discovery_drafts.create(data)
+        if 'generation' in result:
+            trace = result['generation']
+            trace.update(request_id=REQUEST_ID.get(), duration_ms=round((time.monotonic()-started)*1000, 2))
+            service.audit.event('draft_generated', trace['request_id'],
+                stage='application_statement' if data.statement else 'application_email',
+                duration_ms=trace['duration_ms'], status=result['mode'], source=trace['source'],
+                model=trace.get('response_model') or trace['configured_model'],
+                error_code=result.get('fallback_reason'), http_status=trace.get('http_status'))
+        return result
 
     @app.post('/api/discovery/drafts/{draft_id}/approve')
     def approve_discovery_draft(draft_id: str):

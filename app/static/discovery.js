@@ -159,7 +159,6 @@
   }
 
   function showWorkspace(discovery,focus) {
-    get('discovery-intake').classList.add('landing-motion-ready');
     discovery.classList.add('workspace-open');
     syncResultVisibility();
     if (focus) {
@@ -243,12 +242,6 @@
     heading.focus({preventScroll:true});
     heading.scrollIntoView({block:'start', behavior:entryMotion.matches ? 'smooth' : 'instant'});
   };
-  get('landing-title').addEventListener('animationend', event => {
-    if (event.target.matches('.title-tail, .title-tail > :last-child')) {
-      get('discovery-intake').classList.add('landing-motion-ready');
-    }
-  });
-
   const dropZone = get('resume-drop-zone');
   dropZone.addEventListener('dragover', event => {
     if (!event.dataTransfer.types.includes('Files')) return;
@@ -1038,6 +1031,36 @@
     }
   }
 
+  async function postDraft(data) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 26000);
+    try {
+      return await api('/api/discovery/drafts', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data), signal:controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw Error('请求等待超时。可保留现有草稿，稍后重新生成。');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function draftTraceText(draft) {
+    const trace = draft.generation;
+    if (!trace) return '';
+    const source = {fresh:'新模型响应',cache_hit:'历史缓存',coalesced:'共享同一次模型请求',
+      fallback:'本地草稿',preview:'基础预览'}[trace.source];
+    const model = trace.response_model || (draft.mode === 'Workers AI 草稿' ? trace.configured_model : '');
+    return [source,model,trace.duration_ms == null ? '' : trace.duration_ms+' ms',
+      trace.request_id ? '请求 '+trace.request_id : ''].filter(Boolean).join(' · ');
+  }
+
+  function draftEvidenceText(item) {
+    const lead = '简历第 '+item.line+' 行'+(item.transferable ? '（可迁移）' : '');
+    return lead+' · '+(item.quote || item.topics.join('、'))+(item.requirement ? ' ｜ 对应岗位要求 · '+item.requirement : '');
+  }
+
   const draftReasons = {
     not_configured:'Workers AI 尚未配置，可编辑基础草稿。',
     no_evidence:'缺少匹配证据，可补充简历或手动修改。',
@@ -1109,6 +1132,7 @@
     const stats = el('p',undefined,'muted');
     const basis = el('p',undefined,'muted');
     const stateLabel = el('p',undefined,'muted');
+    const traceLabel = el('p',undefined,'muted');
     const submit = el('button','生成陈述');
     submit.type = 'submit';
     const copy = el('button','复制陈述','secondary');
@@ -1117,7 +1141,7 @@
     const controls = el('div',undefined,'actions');
     controls.append(copy,apply);
     const facts = el('p',undefined,'muted');
-    output.append(stateLabel,label('申请陈述',body),stats,basis,facts,controls);
+    output.append(stateLabel,traceLabel,label('申请陈述',body),stats,basis,facts,controls);
     form.append(label('语言',language),label('招聘方问题（选填）',question),limitLabel,submit,status,output);
     panel.append(el('h4','投递方式'),actions,form);
     const slots = new Map();
@@ -1141,12 +1165,12 @@
       if (!available) return;
       if (body.value !== slot.body) body.value = slot.body;
       stateLabel.textContent = slot.edited ? '已编辑' : slot.draft.mode;
+      traceLabel.textContent = draftTraceText(slot.draft);
       const size = count(slot.body);
       const max = options().limit;
       stats.textContent = size+(language.value === 'zh' ? ' 字符' : ' 词')+
         (max ? ' / '+max+(size > max ? ' · 超过填写的限制' : '') : '');
-      const evidence = slot.draft.evidence.map(item =>
-        '简历第 '+item.line+' 行'+(item.transferable ? '（可迁移）' : '')+' · '+item.topics.join('、'));
+      const evidence = slot.draft.evidence.map(draftEvidenceText);
       const duties = slot.draft.duties.map(terms => terms.join('、'));
       basis.textContent = [duties.length ? '岗位职责 · '+duties.join('；') : '', ...evidence].filter(Boolean).join(' ｜ ');
       facts.textContent = slot.draft.missing_facts?.length ? '待补充 · '+slot.draft.missing_facts.join('、') : '';
@@ -1206,19 +1230,19 @@
       show();
       try {
         if (!refresh) {
-          const preview = await post('/api/discovery/drafts',{...request,preview:true});
+          const preview = await postDraft({...request,preview:true});
           if (!sameResume()) return;
           replace(slot,preview);
         }
         slot.status = '正在生成。可先编辑或复制基础草稿。';
         show();
-        const draft = await post('/api/discovery/drafts',refresh ?
+        const draft = await postDraft(refresh ?
           {...request,regeneration_id:crypto.randomUUID()} : request);
         if (!sameResume()) return;
         if (!slot.edited) replace(slot,draft);
         else if (!draft.fallback_reason) slot.proposal = draft;
         slot.status = draft.fallback_reason ? draftReasons[draft.fallback_reason] || '可编辑基础草稿。'
-          : slot.edited ? '新草稿已就绪，当前编辑已保留。' : '申请陈述已就绪。';
+          : slot.edited ? '新草稿待采用，当前编辑已保留。'+draftTraceText(draft) : '申请陈述已就绪。';
       } catch (problem) { slot.status = problem.message; }
       finally { slot.pending = false; show(); }
     };
@@ -1285,6 +1309,7 @@
     const editor = el('div', undefined, 'discovery-mail-editor');
     let modified = false, active = false, proposal = null;
     const mode = el('p',undefined,'muted');
+    const traceLabel = el('p',undefined,'muted');
     const subject = el('input');
     const subjectLabel = el('label','主题');
     subjectLabel.append(subject);
@@ -1309,12 +1334,13 @@
     function fill(draft) {
       modified = false;
       mode.textContent = draft.mode;
+      traceLabel.textContent = draftTraceText(draft);
       subject.value = draft.subject;
       body.value = draft.answer;
       guidance.replaceChildren(el('p','建议附件名 · '+draft.attachment_name),
         el('p','发送前请手动附上简历，并核对收件人和原帖的附件要求。'));
       for (const item of draft.evidence || []) {
-        guidance.append(el('p','简历第 '+item.line+' 行 · '+item.topics.join('、')));
+        guidance.append(el('p',draftEvidenceText(item)));
       }
       for (const hint of draft.guidance) guidance.append(el('p',hint));
       updateLink();
@@ -1354,14 +1380,14 @@
       status.textContent = '正在准备邮件…';
       try {
         if (!editor.childElementCount) {
-          const preview = await post('/api/discovery/drafts', {...inputs,preview:true});
+          const preview = await postDraft({...inputs,preview:true});
           if (!stillCurrent()) return;
           fill(preview);
-          editor.append(mode,subjectLabel,bodyLabel,controls,guidance);
+          editor.append(mode,traceLabel,subjectLabel,bodyLabel,controls,guidance);
           signatureLabel.hidden = true;
         }
         status.textContent = '正在生成正文。现在可以编辑或复制基础草稿。';
-        const draft = await post('/api/discovery/drafts', refresh ?
+        const draft = await postDraft(refresh ?
           {...inputs,regeneration_id:crypto.randomUUID()} : inputs);
         if (!stillCurrent()) return;
         if (modified && !draft.fallback_reason) {
@@ -1372,7 +1398,7 @@
         }
         status.textContent = draft.fallback_reason
           ? reasons[draft.fallback_reason] || '可继续编辑基础草稿。'
-          : modified ? '新草稿已就绪，当前编辑已保留。' : '模型草稿已就绪。';
+          : modified ? '新草稿待采用，当前编辑已保留。'+draftTraceText(draft) : '模型草稿已就绪。';
       } catch (problem) { if (stillCurrent()) status.textContent = problem.message; }
       finally {
         active = false;

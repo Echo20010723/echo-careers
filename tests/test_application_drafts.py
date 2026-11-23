@@ -35,6 +35,10 @@ def draft(client, resume_id, job, **kwargs):
     return response.json()
 
 
+def without_trace(result):
+    return {key:value for key,value in result.items() if key != 'generation'}
+
+
 def test_basic_draft_uses_current_role_and_confirmed_fields(tmp_path):
     with TestClient(create_app(Settings(data_dir=tmp_path, use_demo_resume=True))) as client:
         rid = upload(client, PROFILE)
@@ -142,7 +146,7 @@ def test_english_fallback_and_manual_confirmation(tmp_path):
             recipient='confirmed@example.org', signature='Candidate', available_from='2026-12-01')
         assert result['subject'] == 'Intern Application'
         assert result['recipients'] == ['confirmed@example.org']
-        assert 'unit testing' in result['answer'] and '2026-12-01' in result['answer']
+        assert 'wrote unit tests' in result['answer'] and '2026-12-01' in result['answer']
         assert 'Best regards,\nCandidate' in result['answer']
 
 
@@ -167,7 +171,10 @@ def test_five_distinct_public_jobs_and_cached_inputs(tmp_path, monkeypatch):
             assert preview['mode'] == '基础草稿' and len(calls) == index
             first = draft(client, rid, job)
             assert first['mode'] == 'Workers AI 草稿'
-            assert draft(client, rid, job) == first
+            cached = draft(client,rid,job)
+            assert without_trace(cached) == without_trace(first)
+            assert cached['generation']['source']=='cache_hit' and first['generation']['source']=='fresh'
+            assert cached['generation']['request_id']!=first['generation']['request_id']
         assert len(calls) == 5
         status = client.get('/health').json()['draft_usage']
         assert status['attempts'] == 5 and status['failed'] == 0
@@ -190,7 +197,7 @@ def test_concurrent_requests_coalesce_and_regeneration_is_idempotent(tmp_path, m
         started.set()
         assert release.wait(4)
         return httpx.Response(200, json={'choices':[{'message':{'content':json.dumps({
-            'body':f'我参与 FastAPI 接口开发并编写单元测试，这是第{len(calls)}次草稿。',
+            'body':('我参与 FastAPI 接口开发并编写单元测试。' if len(calls)==1 else '我用单元测试验证 FastAPI 接口行为。'),
             'evidence_ids':['E1'],
         })}}]})
 
@@ -205,12 +212,14 @@ def test_concurrent_requests_coalesce_and_regeneration_is_idempotent(tmp_path, m
         finally:
             release.set()
         original = first.result(timeout=5)
-        assert duplicate.result(timeout=5) == original and len(calls) == 1
+        joined = duplicate.result(timeout=5)
+        assert without_trace(joined) == without_trace(original) and len(calls) == 1
+        assert joined['generation']['source']=='coalesced'
         key = str(uuid4())
         replaced = draft(client, rid, ENGINEERING, regeneration_id=key)
         assert replaced['answer'] != original['answer'] and len(calls) == 2
-        assert draft(client, rid, ENGINEERING, regeneration_id=key) == replaced
-        assert draft(client, rid, ENGINEERING) == replaced and len(calls) == 2
+        assert without_trace(draft(client, rid, ENGINEERING, regeneration_id=key)) == without_trace(replaced)
+        assert without_trace(draft(client, rid, ENGINEERING)) == without_trace(replaced) and len(calls) == 2
 
 
 def test_twelve_sanitized_product_and_engineering_pairs(tmp_path, monkeypatch):
@@ -294,7 +303,7 @@ def test_statement_shares_worker_and_keys_language_question_and_limit(tmp_path, 
         assert not requests
         original = draft(client,rid,job,statement=options)
         assert original['mode']=='Workers AI 草稿'
-        assert draft(client,rid,job,statement=options)==original and len(requests)==1
+        assert without_trace(draft(client,rid,job,statement=options))==without_trace(original) and len(requests)==1
         assert draft(client,rid,job,statement={**options,'language':'zh'})['mode']=='Workers AI 草稿'
         challenge = draft(client,rid,job,statement={**options,'question':'Describe a debugging challenge at Private Company.'})
         assert challenge['mode']=='Workers AI 草稿'
@@ -347,7 +356,7 @@ def test_ops_statement_answers_introduction_and_identifies_only_missing_facts(tm
         english = draft(client,rid,job,statement={'language':'en','question':'Why are you a good fit for this role?'})
         assert all(item['mode']=='Workers AI 草稿' and item['evidence'] for item in (blank,chinese,english))
         assert [call['question_intent'] for call in requests] == ['fit','introduction','fit']
-        assert draft(client,rid,job,statement=intro) == chinese and len(requests)==3
+        assert without_trace(draft(client,rid,job,statement=intro)) == without_trace(chinese) and len(requests)==3
         mixed = draft(client,rid,job,statement={**intro,'question':'请作自我介绍，并说明期望薪资和到岗日期。'})
         assert mixed['mode']=='Workers AI 草稿' and 'Linux' in mixed['answer']
         assert mixed['missing_facts']==['期望薪资','到岗日期']
@@ -357,3 +366,56 @@ def test_ops_statement_answers_introduction_and_identifies_only_missing_facts(tm
         assert '2027-01-04' in confirmed['answer'] and not confirmed['missing_facts'] and len(requests)==4
         limited = draft(client,rid,job,statement={**intro,'limit':10})
         assert limited['fallback_reason']=='invalid_output' and limited['length']<=10
+
+def test_concrete_fragments_follow_selected_job_and_resume(tmp_path, monkeypatch):
+    from app.workers_drafts import WorkersDrafts
+
+    sent = []
+    def worker(request):
+        args = json.loads(request.content)
+        payload = json.loads(args['messages'][1]['content'])
+        sent.append(payload)
+        evidence = payload['evidence'][0]
+        quote = evidence['quote']
+        if 'Linux' in quote:
+            body = '我曾维护 Linux 服务器，排查系统日志里的服务故障。'
+        else:
+            assert 'Jenkins' in quote and '流水线' in quote
+            body = '我维护过 Jenkins 流水线。这段经历可以用于岗位的发布流程维护。'
+        if len(sent) == 4:
+            body = '我维护过 Jenkins 流水线，也曾管理 Kubernetes 集群。'
+        return httpx.Response(200,json={'model':'@cf/qwen/qwen3.8-27b','choices':[{
+            'message':{'content':json.dumps({'body':body,'evidence_ids':[evidence['id']]})}
+        }]})
+
+    monkeypatch.setattr(WorkersDrafts,'transport',httpx.MockTransport(worker))
+    resume = ('## 工作经历\n维护 Jenkins 流水线并验证 CI/CD 发布。\n'
+              '维护 Linux 服务器，排查系统日志里的服务故障。')
+    deploy = {'source':'offerdao','source_id':'deploy','title':'部署工程师',
+              'jd':'关于公司\n我们专注于 PostgreSQL 企业服务。\n岗位职责\n维护 Jenkins CI/CD 流水线。\n'
+                   '任职要求\n熟悉发布流程；熟悉 Linux 环境。\n加分项\n了解 Kubernetes。'}
+    support = {'source':'himalayas','source_id':'support','title':'Linux 技术支持',
+               'jd':'Responsibilities\nTroubleshoot Linux server faults and inspect system logs.'}
+    with TestClient(create_app(configured(tmp_path))) as client:
+        rid = upload(client,resume)
+        first = draft(client,rid,deploy)
+        second = draft(client,rid,support,statement={'language':'zh','question':'请介绍一下你自己'})
+        assert first['mode']==second['mode']=='Workers AI 草稿'
+        assert 'Jenkins' in first['answer'] and 'Jenkins' not in second['answer']
+        assert first['evidence'][0]['line']==2 and second['evidence'][0]['line']==3
+        assert first['evidence'][0]['quote'] in resume and 'Jenkins' in first['evidence'][0]['requirement']
+        assert sent[0]['job_requirements']=={
+            'duties':['维护 Jenkins CI/CD 流水线'], 'required':['熟悉发布流程','熟悉 Linux 环境'], 'bonus':['了解 Kubernetes']}
+        assert 'PostgreSQL' not in json.dumps(sent,ensure_ascii=False)
+        assert first['generation']['response_model']=='@cf/qwen/qwen3.8-27b'
+        assert first['generation']['http_status']==200
+        changed = upload(client,'## 工作经历\n维护 Linux 服务器，排查系统日志里的服务故障。')
+        third = draft(client,changed,deploy)
+        assert 'Linux' in third['answer'] and '我维护过 Jenkins' not in third['answer']
+        rejected = draft(client,rid,{**deploy,'source_id':'reject-unsupported'},regeneration_id='540be7c3-37d4-4834-8300-9d6120e053b5')
+        assert rejected['fallback_reason']=='invalid_output'
+        assert '管理 Kubernetes' not in rejected['answer']
+        assert rejected['generation']['attempted']
+        weak = upload(client,'## 教育背景\n计算机科学本科。')
+        empty = draft(client,weak,deploy)
+        assert empty['fallback_reason']=='no_evidence' and len(sent)==4

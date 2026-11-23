@@ -21,15 +21,14 @@
   --header: var(--surface);
   --landing-glow: #202a22;
   --hero-text: #f1ecdf;
-  --hero-basin: #161918;
-  --hero-wall: #333734;
-  --hero-rim: #44483b;
-  --hero-bank: #30342c;
-  --hero-grain: .29;
-  --terrain-shadow: #141715;
-  --terrain-face: #2d3228;
-  --terrain-light: #70715b;
-  --terrain-mist: #292d29;
+  --hero-basin: #101314;
+  --hero-atmosphere: #202522;
+  --hero-back-rim: #575b49;
+  --hero-back-face: #282d26;
+  --hero-front-rim: #3e453b;
+  --hero-front-face: #1f2521;
+  --hero-fold-shadow: #080b0ae0;
+  --hero-grain: .08;
   --preview-shadow: #070a0799;
   --flight-shadow: #90b64c55;
   --evidence-bg: #28332b;
@@ -67,15 +66,14 @@
   --header: #f9f9f6;
   --landing-glow: #e8ece2;
   --hero-text: #252b27;
-  --hero-basin: #f6f5f0;
-  --hero-wall: #dedfd7;
-  --hero-rim: #d2d5c9;
-  --hero-bank: #dedfd6;
-  --hero-grain: .16;
-  --terrain-shadow: #b4b8ab;
-  --terrain-face: #dddcd1;
-  --terrain-light: #f1f0e3;
-  --terrain-mist: #e5e4dc;
+  --hero-basin: #f7f6f1;
+  --hero-atmosphere: #eaeae3;
+  --hero-back-rim: #f1efe5;
+  --hero-back-face: #c7c9bb;
+  --hero-front-rim: #eae9df;
+  --hero-front-face: #d9dacf;
+  --hero-fold-shadow: #626a4f35;
+  --hero-grain: .045;
   --preview-shadow: #394e3b1a;
   --flight-shadow: #45664b30;
   --evidence-bg: #eef3ec;
@@ -486,59 +484,67 @@ body:has(#discovery.active:not(.workspace-open)) { background: var(--surface); }
   font-display: swap;
 }
 
+/* Keep the background and foreground paint order independent of animation and fonts. */
 .landing-hero {
-  position: relative; isolation: isolate; display: grid; grid-template-rows: 1fr auto;
+  position: relative; isolation: isolate; display: grid; grid-template-rows: minmax(min-content, 1fr) auto;
   justify-items: center; align-items: center; gap: 26px;
-  min-height: calc(100svh - 73px); padding: clamp(52px, 10svh, 96px) 16px 27px;
-  text-align: center; overflow: clip;
+  min-height: calc(100vh - 73px); min-height: calc(100svh - 73px);
+  padding: clamp(42px, 7svh, 72px) 16px 25px;
+  text-align: center; overflow: hidden;
 }
 .hero-material {
-  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 42%, var(--hero-basin) 0%, transparent 62%),
-    radial-gradient(ellipse at 79% 22%, var(--hero-wall) 0%, transparent 62%),
-    radial-gradient(ellipse at 12% 40%, var(--hero-bank) 0%, transparent 48%),
+    radial-gradient(ellipse at 50% 33%, var(--hero-basin) 10%, transparent 70%),
+    radial-gradient(ellipse at 78% 29%, var(--hero-atmosphere), transparent 69%),
     var(--surface);
-  mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%);
-}
-.hero-material canvas {
-  position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden; filter: blur(.45px);
-}
-.hero-material.has-terrain canvas { visibility: visible; }
-.hero-material.has-terrain::before { visibility: hidden; }
-@media (prefers-reduced-motion: no-preference) {
-  .hero-material.terrain-in-view:not(.has-terrain)::before { animation: terrain-fallback 16s ease-in-out infinite alternate; }
-}
-@keyframes terrain-fallback {
-  from { transform: translate(-1.2%, 1.6%) rotate(-6deg) scale(1.10); opacity: .79; }
-  to { transform: translate(1.2%, -1.6%) rotate(-4deg) scale(1.16); opacity: 1; }
 }
 .hero-material::before, .hero-material::after {
-  content: ""; position: absolute; inset: 0;
+  content: ""; position: absolute;
+  transform: rotate(var(--fold-angle));
 }
 .hero-material::before {
-  background: radial-gradient(ellipse 81% 122% at 45% -55%, transparent 98%,
-      var(--hero-rim) 100%, var(--hero-bank) 104%, var(--surface) 131%);
-  transform: rotate(-5deg) scale(1.09);
+  --fold-angle: -7deg;
+  inset: 69% -19% -27% -15%;
+  border-radius: 54% 41% 0 0 / 25% 24% 0 0;
+  background:
+    radial-gradient(ellipse at 64% -13%, var(--hero-back-rim), transparent 60%),
+    linear-gradient(177deg, var(--hero-back-face), var(--surface) 78%);
+  box-shadow: 0 -11px 34px -18px var(--hero-fold-shadow);
 }
-.hero-material.has-terrain::after { opacity: calc(var(--hero-grain) * .45); }
 .hero-material::after {
-  background: url("/static/hero-grain.png") repeat; opacity: var(--hero-grain);
-  mix-blend-mode: soft-light;
-  mask-image: linear-gradient(transparent, #000 38%, #000 77%, transparent);
+  --fold-angle: 7deg;
+  inset: 77% -12% -32% -23%;
+  border-radius: 52% 58% 0 0 / 31% 37% 0 0;
+  background:
+    linear-gradient(0deg, var(--surface) 18%, transparent 72%),
+    radial-gradient(ellipse at 19% 2%, var(--hero-front-rim), transparent 59%),
+    linear-gradient(160deg, var(--hero-front-face), var(--surface) 78%);
+  box-shadow: 0 -11px 32px -19px var(--hero-fold-shadow);
 }
+.landing-hero::after {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(var(--hero-basin) 48%, transparent 74%, var(--surface)),
+    url("/static/hero-grain.png") repeat;
+  opacity: var(--hero-grain);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero-material.terrain-in-view::before { animation: hero-fold-drift 18s ease-in-out infinite alternate; }
+  .hero-material.terrain-in-view::after { animation: hero-fold-drift 21s ease-in-out infinite alternate-reverse; }
+}
+@keyframes hero-fold-drift {
+  from { transform: translateY(-1%) rotate(var(--fold-angle)); }
+  to { transform: translateY(4%) rotate(var(--fold-angle)); }
+}
+.landing-copy, .landing-sample-link { position: relative; z-index: 1; }
 .landing-copy { min-width: 0; width: min(100%, 1080px); }
 .landing-title {
   margin: 0 0 24px; color: var(--hero-text);
-  font: 400 clamp(37px, 6.35vw, 96px)/1.08 "Geist Pixel Circle", ui-monospace, "Consolas", monospace;
+  font: 400 clamp(37px, 6.35vw, 96px)/1.08 ui-monospace, "Consolas", monospace;
   letter-spacing: -.018em;
 }
+.hero-font-ready .landing-title { font-family: "Geist Pixel Circle", ui-monospace, "Consolas", monospace; }
 .title-lead, .title-tail { display: block; }
-.title-lead, .title-tail { animation: title-rise 350ms ease-out both; }
-.title-tail { animation-delay: 105ms; }
-.landing-motion-ready :is(.title-lead, .title-tail, .title-tail > span),
-.intake-overlay :is(.title-lead, .title-tail, .title-tail > span) { animation: none; }
-@keyframes title-rise { from { opacity: .25; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .landing-intro { color: var(--muted); font-size: clamp(16px, 1.4vw, 21px); margin: 0 0 29px; line-height: 1.6; text-wrap: balance; }
 .landing-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 14px; }
 .landing-actions button { min-width: 182px; min-height: 52px; padding: 0 22px; font-size: 16px; }
@@ -658,7 +664,27 @@ body:has(#discovery.active:not(.workspace-open)) { background: var(--surface); }
   .brand { font-size: 20px; gap: 9px; }
   nav { justify-content: space-between; gap: 4px; }
   nav button { min-height: 41px; font-size: 13px; }
-  .landing-hero { min-height: calc(100svh - 111px); padding: 35px 16px 17px; }
+  .landing-hero {
+    min-height: calc(100vh - 111px); min-height: calc(100svh - 111px);
+    padding: 17px 16px 14px; gap: 22px;
+  }
+  .landing-copy { align-self: center; padding-bottom: clamp(0px, 13svh, 102px); }
+  .hero-material {
+    background:
+      radial-gradient(ellipse at 51% 30%, var(--hero-basin) 21%, transparent 77%),
+      radial-gradient(ellipse at 92% 53%, var(--hero-atmosphere), transparent 57%),
+      var(--surface);
+  }
+  .hero-material::before {
+    --fold-angle: -16deg;
+    inset: 64% -28% -11% -31%;
+    border-radius: 29% 62% 0 0 / 15% 50% 0 0;
+  }
+  .hero-material::after {
+    --fold-angle: 15deg;
+    inset: 80% -32% -14% -29%;
+    border-radius: 51% 43% 0 0 / 48% 23% 0 0;
+  }
   .landing-intro { margin-bottom: 21px; }
   .landing-actions button { min-height: 47px; font-size: 14px; }
   .landing-preview { padding: 15px; }
@@ -686,7 +712,6 @@ body:has(#discovery.active:not(.workspace-open)) { background: var(--surface); }
   nav::after { transition: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .landing-title :is(.title-lead, .title-tail, .title-tail > span) { animation: none; }
   .landing-actions button:active, .landing-actions [aria-busy=true] { transform: none; }
 }
 
@@ -777,13 +802,8 @@ body:has(#discovery.active:not(.workspace-open)) { background: var(--surface); }
 
 @media (max-width: 560px) {
   .landing-title { font-size: clamp(36px, 11.2vw, 57px); margin-bottom: 17px; }
-  .title-tail { animation: none; }
-  .title-tail > span { display: block; animation: title-rise 350ms ease-out both; animation-delay: 105ms; }
-  .title-tail > span:last-child { animation-delay: 210ms; }
+  .title-tail > span { display: block; }
   .landing-hero .landing-actions { flex-direction: column; }
   .landing-hero .landing-actions button { width: min(100%, 315px); }
   .example-flow { grid-template-columns: 1fr; }
-}
-@media (max-width: 560px) and (prefers-reduced-motion: reduce) {
-  .landing-title .title-tail > span { animation: none; }
 }

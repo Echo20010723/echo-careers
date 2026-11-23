@@ -2,7 +2,7 @@
 from pathlib import PurePath
 import re
 
-from .discovery_rules import evidence_index, skill_hits
+from .discovery_rules import evidence_index, skill_hits, split_job_text
 from .resumes import digest
 from .policy import unsafe_instruction
 from .store import dumps
@@ -27,6 +27,22 @@ ENGINEERING = (
     ('异常处理', 'error handling', r'异常处理|错误处理|error handling'),
     ('数据质量验证', 'data quality checks', r'数据质量|data quality'),
     ('服务部署', 'service deployment', r'部署|deploy'),
+    ('Jenkins', 'Jenkins', r'\bJenkins\b'),
+    ('CI/CD', 'CI/CD', r'CI\s*/\s*CD|CI/CD|持续集成|持续交付|持续部署'),
+    ('Shell', 'Shell', r'\b(?:shell|bash)\b'),
+    ('安装自动化', 'installation automation', r'安装.{0,10}自动化|自动化.{0,10}安装|installation scripts?|automat\w* .{0,20}install'),
+    ('故障巡检', 'system monitoring', r'监控|巡检|系统日志|\bmonitoring\b|system logs'),
+    ('Ansible', 'Ansible', r'\bAnsible\b|ansibale'),
+    ('Dockerfile', 'Dockerfile', r'\bDockerfile\b|Dockerﬁle'),
+    ('Harbor', 'Harbor', r'\bHarbor\b'),
+    ('Prometheus', 'Prometheus', r'\bPrometheus\b'),
+    ('Grafana', 'Grafana', r'\bGrafana\b'),
+    ('Loki', 'Loki', r'\bLoki\b'),
+    ('PromQL', 'PromQL', r'\bPromQL\b'),
+    ('Filebeat', 'Filebeat', r'\bFilebeat\b'),
+    ('Zabbix', 'Zabbix', r'\bZabbix\b'),
+    ('日志采集', 'log collection', r'日志采集|收集(?:服务器)?日志|日志收集|log collection|collect(?:ing)? logs'),
+    ('应用可用性测试', 'availability testing', r'可用性测试|availability test'),
     ('性能验证', 'performance testing', r'性能测试|性能验证|benchmark|load test'),
     ('自动化测试', 'automated testing', r'自动化测试|automated test'),
     ('集成测试', 'integration testing', r'集成测试|integration test'),
@@ -49,7 +65,27 @@ def topics(text, language):
     return list(dict.fromkeys(found))
 
 
-def select_evidence(job, resume, *, language=None, question_topics=(), allow_transferable=False):
+def safe_excerpt(text):
+    if unsafe_instruction(text):
+        return ''
+    text = re.sub(r'https?://\S+|[\w.+-]+@[\w.-]+\.\w+|\+?\d[\d ()-]{8,}\d', '[省略]', text)
+    text = re.sub(r'(?:姓名|手机号|电话|邮箱|地址|微信|身份证|phone|email|address)\s*[:：]\s*[^，。;；]+', '[省略]', text, flags=re.I)
+    return re.sub(r'^\s*\d{1,2}[.)、．]\s*', '', text).strip()[:280]
+
+
+def job_context(job):
+    source = job.jd or job.jd_summary or job.description or ''
+    sections = split_job_text(source)
+    if job.requirements:
+        listed = split_job_text(job.requirements)
+        for group, lines in [('required', listed['duties'] + listed['required']), ('bonus', listed['bonus'])]:
+            for line in lines:
+                if not any(line in existing for existing in sections['required'] + sections['bonus']):
+                    sections[group].append(line)
+    return sections
+
+
+def select_evidence(job, resume, *, language=None, question_topics=(), allow_transferable=False, sections=None):
     jd = job.jd or job.jd_summary or job.description or ''
     title = job.title or ''
     title_script = re.sub(r'\s', '', title)
@@ -57,11 +93,14 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
     body_zh = len(re.findall(r'[\u3400-\u9fff]', jd[:1500]))
     language = language or ('zh' if zh >= 1 or body_zh >= 12 else 'en')
     product_title = re.search(r'产品(?:经理|实习|运营|专员|助理)|\bproduct (?:manager|intern|owner|analyst|management)\b', title, re.I)
-    target = topics(title + '\n' + jd, language)
+    sections = sections if sections is not None else job_context(job)
+    job_requirements = sections['duties'] + sections['required']
+    focus = title+'\n'+'\n'.join(job_requirements)
+    target = topics(focus, language) or topics(' '.join(sections['bonus']), language)
     role_topics = lambda table: {row[0 if language == 'zh' else 1] for row in table}
     product, engineering = role_topics(PRODUCT), role_topics(ENGINEERING)
     role = 'product' if product_title or len(product.intersection(target)) >= 2 and not engineering.intersection(target) else 'engineering'
-    preferred = product if role == 'product' else engineering | set(skill_hits(title + jd))
+    preferred = product if role == 'product' else engineering | set(skill_hits(focus))
     scored, transferable = [], []
     for item in evidence_index(resume['text']):
         line = item['quote']
@@ -72,7 +111,6 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
         emphasis = set(terms).intersection(preferred)
         if not (overlap or (allow_transferable and emphasis)) or role == 'product' and not emphasis:
             continue
-        # Send only canonical actions and topics, never the original resume line.
         terms = sorted((term for term in terms if term in overlap or term in emphasis),
                        key=lambda term: (term not in question_topics, term not in overlap))[:6]
         verbs = []
@@ -86,14 +124,21 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
             verbs.append('verification')
         score = 4*len(overlap) + 3*len(emphasis) + int(item['category'] != '其他')
         score += 5*len(set(terms).intersection(question_topics))
-        (scored if overlap else transferable).append((score, item['line'], terms, verbs or ['participation']))
+        excerpt = safe_excerpt(line)
+        if not excerpt:
+            continue
+        matched = sorted(job_requirements, key=lambda part: -len(overlap.intersection(topics(part, language))))
+        requirement = next((part for part in matched if overlap.intersection(topics(part, language))), None)
+        (scored if overlap else transferable).append((score, item['line'], terms, verbs or ['participation'],
+                                                     excerpt, requirement))
     selected = []
     seen = set()
-    for _, number, terms, verbs in sorted(scored or transferable, key=lambda row: (-row[0],row[1])):
+    for _, number, terms, verbs, excerpt, requirement in sorted(scored or transferable, key=lambda row: (-row[0],row[1])):
         if set(terms) <= seen:
             continue
         seen.update(terms)
         selected.append({'id':f'E{len(selected)+1}','line':number,'topics':terms,'actions':verbs,
+                         'quote':excerpt,'requirement':safe_excerpt(requirement) if requirement else None,
                          **({'transferable':True} if not scored else {})})
         if len(selected) == 2:
             break
@@ -102,7 +147,8 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
 
 def assemble_application(job, data, resume, workers, settings):
     jd = job.jd or job.jd_summary or ''
-    language, role, target, evidence = select_evidence(job, resume)
+    sections = job_context(job)
+    language, role, target, evidence = select_evidence(job, resume, sections=sections)
     chinese = language == 'zh'
     title = ' '.join((job.title or ('原帖岗位' if chinese else 'this role')).split())
     company = ' '.join((job.company or '').split())
@@ -119,8 +165,8 @@ def assemble_application(job, data, resume, workers, settings):
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', ' ', ' - '.join(filter(None,[signature,title,'简历' if chinese else 'Resume'])))
     extension = PurePath(resume['name']).suffix.lower()
     attachment = ' '.join(safe_name.split())[:100].strip(' .') + (extension if extension in {'.pdf','.txt','.md'} else '.pdf')
-    payload = draft_payload(language, role, target, evidence)
-    narrative, reason = generate_narrative(job, data, resume, workers, settings, payload)
+    payload = draft_payload(language, role, target, evidence, sections, kind='email')
+    narrative, reason, trace = generate_narrative(job, data, resume, workers, settings, payload)
     if chinese:
         body = [(company+'招聘团队' if company else '招聘团队')+'您好，', '我希望应聘'+title+'。']
     else:
@@ -130,10 +176,7 @@ def assemble_application(job, data, resume, workers, settings):
         body.append(narrative.body)
         evidence = [item for item in evidence if item['id'] in narrative.evidence_ids]
     elif evidence:
-        separator = '、' if chinese else ', '
-        entries = [separator.join(item['topics']) for item in evidence]
-        body.append(('我做过与以下方向相关的工作：' if chinese else 'My relevant work has covered ') +
-                    ('；' if chinese else '; ').join(entries) + ('。' if chinese else '.'))
+        body.extend(evidence_paragraphs(evidence, language))
     timing = []
     if data.available_from:
         timing.append(('最早可于' + data.available_from.isoformat() + '到岗') if chinese else
@@ -147,20 +190,49 @@ def assemble_application(job, data, resume, workers, settings):
     body.append('感谢您审阅我的申请。' if chinese else 'Thank you for considering my application.')
     if signature:
         body.append(('此致\n' if chinese else 'Best regards,\n')+signature)
+    answer = '\n\n'.join(body)
     return {'mode':'Workers AI 草稿' if narrative else '基础草稿', 'fallback_reason':reason,
-            'subject':subject,'answer':'\n\n'.join(body),'recipients':job.contact_emails,
-            'guidance':guidance,'signature':signature,'attachment_name':attachment,'evidence':evidence}
+            'subject':subject,'answer':answer,'language':language,'length':statement_length(answer,language),'recipients':job.contact_emails,
+            'guidance':guidance,'signature':signature,'attachment_name':attachment,'evidence':evidence,'generation':trace}
 
 
 
-def draft_payload(language, role, target, evidence):
-    return {'language':language,'role':role,'jd_topics':target,
+def evidence_paragraphs(evidence, language):
+    paragraphs = []
+    for index, item in enumerate(evidence):
+        quote = item['quote'].rstrip('。.!;； ')
+        requirement = (item['requirement'] or '').rstrip('。.!;； ')
+        language_matches = lambda fragment: bool(re.search(r'[\u3400-\u9fff]',fragment)) == (language == 'zh')
+        if requirement and not language_matches(requirement):
+            requirement = ('、' if language == 'zh' else ', ').join(topics(requirement,language))
+        if language == 'zh':
+            first = (quote if quote.startswith('我') else '我曾'+quote) if language_matches(quote) else '我的实际工作涉及'+'、'.join(item['topics'])
+            fit = '这与岗位要求的「'+requirement+'」直接相关。' if requirement and index == 0 else ''
+            paragraphs.append(first+'。'+fit)
+        else:
+            first = ('I '+quote[0].lower()+quote[1:] if not re.match(r'I\b',quote,re.I) else quote
+                     ) if language_matches(quote) else 'My practical work covered '+', '.join(item['topics'])
+            fit = ' This experience relates to the role requirement: '+requirement+'.' if requirement and index == 0 else ''
+            paragraphs.append(first+'.'+fit)
+    return paragraphs
+
+
+def draft_payload(language, role, target, evidence, sections, *, kind):
+    targets = {'statement':{'zh':[92, 138], 'en':[75, 115]}, 'email':{'zh':[78, 120], 'en':[55, 90]}}
+    return {'language':language,'role':role,'kind':kind,'jd_topics':target,
+            'length_target':targets[kind][language] if evidence and any(item['requirement'] for item in evidence) else None,
+            'job_requirements':{
+                field:[excerpt for line in sections[field][:4] if (excerpt := safe_excerpt(line))]
+                for field in ('duties','required','bonus')
+            },
             'evidence':[{key:value for key,value in item.items() if key != 'line'} for item in evidence]}
 
 
 def generate_narrative(job, data, resume, workers, settings, payload):
+    trace = {'source':'preview' if data.preview else 'fallback', 'provider':'cloudflare_workers_ai',
+             'configured_model':workers.model}
     if data.preview:
-        return None, None
+        return None, None, trace
     filename = 'application_statement.txt' if data.statement else 'application_draft.txt'
     instructions = (settings.root/'prompts'/filename).read_text(encoding='utf-8')
     cache_key = digest(dumps([
@@ -168,8 +240,9 @@ def generate_narrative(job, data, resume, workers, settings, payload):
         data.model_dump(mode='json', exclude={'preview','regeneration_id','application_job'}),
         payload, instructions, workers.model,
     ]))
-    return workers.generate(payload, instructions, scope=settings.data_dir,
-        public=settings.public_mode, cache_key=cache_key, regeneration_id=data.regeneration_id)
+    narrative, reason = workers.generate(payload, instructions, scope=settings.data_dir,
+        public=settings.public_mode, cache_key=cache_key, regeneration_id=data.regeneration_id, trace=trace)
+    return narrative, reason, trace
 
 
 QUESTION_INTENTS = (
@@ -222,12 +295,11 @@ def statement_facts(data, facts, language):
     return known, missing
 
 
-def statement_duties(job, language, role, question_topics):
-    jd = job.jd or job.jd_summary or job.description or ''
+def statement_duties(sections, language, role, question_topics):
     table = PRODUCT if role == 'product' else ENGINEERING
     preferred = {row[0 if language == 'zh' else 1] for row in table}
     duties = []
-    for order, clause in enumerate(re.split(r'[。；;\n]+|(?<=[.!?])\s+', jd)[:80]):
+    for order, clause in enumerate((sections['duties'] or sections['required'])[:80]):
         terms = topics(clause,language)[:5]
         if not terms or re.search(r'优先|加分|bonus|preferred',clause,re.I):
             continue
@@ -251,6 +323,9 @@ def statement_fallback(language, intent, duties, evidence, limit):
         if limit is None or statement_length(message,language) <= limit:
             return message
         return message[:limit] if zh else ' '.join(message.split()[:limit])
+
+    if limit is None and intent in {'fit','introduction'}:
+        return '\n\n'.join(evidence_paragraphs(evidence, language))
 
     examples = []
     wanted = {term for duty in duties for term in duty}
@@ -294,17 +369,21 @@ def assemble_statement(job, data, resume, workers, settings):
     options = data.statement
     intent, question_topics, requested_facts = question_focus(options.question.strip(),options.language)
     confirmed, missing = statement_facts(data, requested_facts, options.language)
+    sections = job_context(job)
     language, role, target, evidence = select_evidence(
-        job, resume, language=options.language, question_topics=question_topics, allow_transferable=True,
+        job, resume, language=options.language, question_topics=question_topics, allow_transferable=True, sections=sections,
     )
-    duties = statement_duties(job, language, role, question_topics)
-    payload = draft_payload(language, role, target, evidence)
-    payload.update(kind='statement', duties=duties, question_intent=intent, question_topics=question_topics,
-                   limit=options.limit)
+    duties = statement_duties(sections, language, role, question_topics)
+    payload = draft_payload(language, role, target, evidence, sections, kind='statement')
+    payload.update(duties=duties, question_intent=intent, question_topics=question_topics, limit=options.limit)
+    if options.limit is not None:
+        payload['length_target'] = None
     if intent in {'manual','eligibility'}:
         narrative, reason = None, 'question_needs_input' if missing or intent == 'manual' else None
+        trace = {'source':'preview' if data.preview else 'fallback', 'provider':'cloudflare_workers_ai',
+                 'configured_model':workers.model}
     else:
-        narrative, reason = generate_narrative(job, data, resume, workers, settings, payload)
+        narrative, reason, trace = generate_narrative(job, data, resume, workers, settings, payload)
     answer = narrative.body if narrative else statement_fallback(language,intent,duties,evidence,options.limit)
     if missing and intent == 'eligibility':
         answer = ('请补充'+'、'.join(missing)+'。' if language == 'zh'
@@ -319,8 +398,9 @@ def assemble_statement(job, data, resume, workers, settings):
     if narrative:
         evidence = [item for item in evidence if item['id'] in narrative.evidence_ids]
     else:
-        evidence = [item for item in evidence if any(term.casefold() in answer.casefold() for term in item['topics'])]
+        evidence = [item for item in evidence if item['quote'].rstrip('。.!;； ') in answer or
+                    any(term.casefold() in answer.casefold() for term in item['topics'])]
     return {'mode':'Workers AI 草稿' if narrative else '待补充' if reason == 'question_needs_input' else '基础草稿',
             'fallback_reason':reason, 'missing_facts':missing, 'confirmed_facts':confirmed,
             'answer':answer,'language':language,'limit':options.limit,
-            'length':statement_length(answer,language),'evidence':evidence,'duties':duties}
+            'length':statement_length(answer,language),'evidence':evidence,'duties':duties,'generation':trace}

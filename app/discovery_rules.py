@@ -247,15 +247,54 @@ def prepare_match_evidence(index):
     return MatchEvidence(index, attributed, any(roles & TECH for _, roles in attributed))
 
 
+JD_HEADINGS = (
+    ('background', r'公司(?:介绍|简介|背景)|团队(?:介绍|简介|背景)|关于(?:我们|公司|团队)|关于公司|about (?:us|the company|the team)|company (?:overview|background|profile)|who we are|our (?:mission|company|team)|what we offer|benefits|福利待遇'),
+    ('duties', r"岗位职责|核心职责|主要职责|职责|工作内容|岗位描述|responsibilities|key responsibilities|role responsibilities|duties|what you(?:[’']ll| will) do|about the role|the role"),
+    ('required', r'任职要求|岗位要求|基本要求|必备条件|招聘要求|要求|requirements|(?:minimum|required|basic) qualifications|qualifications|what you bring'),
+    ('bonus', r'加分项|优先条件|优先考虑|(?:preferred|desired) qualifications|nice to have|bonus'),
+)
+
+
+def split_job_text(jd):
+    sections = {key: [] for key in ('duties', 'required', 'bonus', 'background')}
+    current = 'duties'
+    parts = (part.strip() for part in re.split(r'[。；;\n]+|[.!?](?=\s)', jd) if part.strip())
+    for number, part in enumerate(parts):
+        if number == 120:
+            break
+        plain = re.sub(r'^[\s#>*\-•\d.、]+', '', part).strip('* ')
+        if re.match(r'^(?:job (?:title|location|contract type|seniority level)|location type|岗位名称|工作地点)\s*[:：]', plain, re.I):
+            continue
+        heading, content = next(
+            ((key, found[1]) for key, pattern in JD_HEADINGS
+             if (found := re.fullmatch(r'(?:'+pattern+r')\s*\**(?:\s*[:：]\s*(.*))?', plain, re.I))),
+            (None, None),
+        )
+        if heading:
+            current = heading
+            if content and content in part:
+                sections[heading].append(content)
+            continue
+        if current == 'background' or re.match(
+            r'^(?:我们(?:是|专注|致力|拥有|成立)|本公司|公司成立|we (?:are|were founded|design and deliver|design, test, and deploy)|'
+            r'our (?:mission|leadership|company|founder|studio)|.{1,55} is (?:an? |the )(?:fast-growing|leading|global|award-winning|SBA))', plain, re.I
+        ):
+            key = 'background'
+        elif re.search(r'加分|优先|nice to have|bonus|preferred', plain, re.I):
+            key = 'bonus'
+        elif re.search(r'必须|需要具备|需具备|熟练掌握|\b(?:required|must have|proficiency in)\b', plain, re.I):
+            key = 'required'
+        else:
+            key = current
+        sections[key].append(part)
+    return sections
+
+
 def assess(service, job, index, request, *, use_model=True):
     evidence = index if isinstance(index, MatchEvidence) else prepare_match_evidence(index)
     jd = job.jd or job.jd_summary or ''
-    parts = [part.strip() for part in re.split(r'[。；;\n]+|[.!?](?=\s)', jd) if part.strip()][:30]
-    bonus = [part for part in parts if re.search(r'加分|优先|nice to have|bonus|preferred', part, re.I)]
-    required = [part for part in parts if part not in bonus and re.search(r'要求|必须|需要|具备|熟练掌握|required|requirements|qualifications|must have|proficiency in', part, re.I)]
-    duties = [part for part in parts if part not in bonus + required]
-    if not duties and parts:
-        duties = [parts[0]]
+    parts = split_job_text(jd)
+    duties, required, bonus = (parts[key][:30] for key in ('duties','required','bonus'))
     extract = {'duties': duties, 'required': required, 'bonus': bonus, 'explanation': ''}
     duty_skills = set(skill_hits(' '.join(duties)))
     required_skills = set(skill_hits(' '.join(required)))

@@ -48,6 +48,7 @@ class WorkersDrafts:
         self.public_hourly = settings.cloudflare_visitor_hourly_drafts
         self.local_hourly = settings.cloudflare_local_hourly_drafts
         timeout = settings.cloudflare_timeout
+        self.draft_timeout = min(24, timeout+6)
         self.client = httpx.Client(timeout=httpx.Timeout(timeout, connect=min(2.0, timeout)),
                                    transport=self.transport, follow_redirects=False)
         self.lock = Lock()
@@ -183,7 +184,7 @@ class WorkersDrafts:
         result, usage = (None, 'provider_error'), None
         upstream = {}
         try:
-            result, usage = self._request(payload, instructions, max_tokens=620, upstream=upstream)
+            result, usage = self._request(payload, instructions, timeout=self.draft_timeout, max_tokens=480, upstream=upstream)
         finally:
             with self.lock:
                 self._record(day, started, result, usage)
@@ -208,7 +209,7 @@ class WorkersDrafts:
             endpoint = f'https://api.cloudflare.com/client/v4/accounts/{self.account}/ai/v1/chat/completions'
             request_options = {}
             if timeout is not None:
-                wait = min(timeout, self.client.timeout.read)
+                wait = min(timeout, self.draft_timeout if schema is Narrative else self.client.timeout.read)
                 request_options['timeout'] = httpx.Timeout(wait, connect=min(2.0, wait))
             body = {'model':self.model, 'messages':[
                     {'role':'system','content':instructions},
@@ -255,7 +256,7 @@ class WorkersDrafts:
             if choice.get('finish_reason') not in {None, 'stop', 'length'}:
                 return (None, 'invalid_output'), usage
             result = schema.model_validate_json(choice['message']['content'])
-            if schema is Narrative and not supported(result, payload):
+            if schema is Narrative and not supported(result, payload, upstream):
                 return (None, 'invalid_output'), usage
             return (result, None), usage
         except httpx.TimeoutException:
@@ -282,24 +283,33 @@ def statement_length(body, language):
     return len(''.join(body.split())) if language == 'zh' else len(body.split())
 
 
-def supported(narrative, payload):
+def supported(narrative, payload, trace=None):
+    def invalid(code):
+        if trace is not None:
+            trace['validation'] = code
+        return False
+
     available = {item['id']:item['topics'] for item in payload['evidence']}
     ids = narrative.evidence_ids
     if len(ids) != len(set(ids)) or any(identifier not in available for identifier in ids):
-        return False
+        return invalid('evidence_ids')
     body = narrative.body
     if unsafe_instruction(body) or re.search(
         r'[@<>]|https?://|到岗|出勤|附件|可实习|署名|'
         r'\b(?:availability|available to start|days per week|attached|sincerely)\b', body, re.I
     ):
-        return False
+        return invalid('unsafe_body')
     # Numeric claims are allowed only when their complete literal occurs in cited evidence.
     cited_quotes = ' '.join(item.get('quote', '') for item in payload['evidence'] if item['id'] in ids)
     numeric_claim = r'(?<![\d.])\d+(?:\.\d+)?\s*(?:[%％]|年|个月|天|次|hours?\b|years?\b|months?\b)|\d{2,}(?:\.\d+)?'
     canon = lambda value: re.sub(r'\s+', '', value).replace('％','%').casefold()
     known_numbers = {canon(match.group()) for match in re.finditer(numeric_claim,cited_quotes,re.I)}
     if any(canon(match.group()) not in known_numbers for match in re.finditer(numeric_claim,body,re.I)):
-        return False
+        return invalid('unsupported_number')
+    outcome_claim = r'确保.{0,16}(?:稳定(?:运行)?|零故障|高可用)|显著(?:提升|降低|减少)|独立(?:主导|负责|完成)|' \
+                    r'\b(?:single-handedly|guaranteed (?:uptime|stability)|ensured (?:stable|stability|uptime))\b'
+    if re.search(outcome_claim, body, re.I) and not re.search(outcome_claim, cited_quotes, re.I):
+        return invalid('unsupported_outcome')
     # A detail present only in a vacancy can describe the role, not past experience.
     prior_work = re.compile(r'做过|负责过|维护过|曾|过往|此前|我(?:使用|用|实现|开发|维护|参与|管理)|'
                             r'\bI (?:have |previously )?(?:built|developed|used|maintained|deployed|managed|worked|implemented)\b', re.I)
@@ -308,19 +318,21 @@ def supported(narrative, payload):
             continue
         tools = skill_hits(sentence) + re.findall(r'\b(?:Jenkins|Ansible|Terraform|Kubernetes|Shell|Bash|CI/CD|Dockerfile|Harbor|Prometheus|Grafana|Loki|PromQL|Filebeat|Zabbix)\b', sentence,re.I)
         if any(tool.casefold() not in cited_quotes.casefold() for tool in tools):
-            return False
+            return invalid('unsupported_tool')
     if re.search(r'^(?:Dear\b|Hi\b|Hello\b|您好|尊敬|Best regards|Regards\b|此致|敬礼)|'
                  r'\b(?:I am authorized to work|I do not require sponsorship)\b|无需签证|有工作许可', body, re.I | re.M):
-        return False
+        return invalid('mail_or_eligibility')
     if payload.get('kind') == 'statement':
         if re.search(r'谢谢您的考虑|感谢您审阅', body):
-            return False
+            return invalid('statement_signoff')
         if len(re.split(r'\n\s*\n', body)) > 2:
-            return False
+            return invalid('paragraph_count')
         limit = payload.get('limit')
         if limit is not None and statement_length(body,payload['language']) > limit:
-            return False
+            return invalid('length_limit')
     is_chinese = bool(re.search(r'[\u3400-\u9fff]',body))
-    return is_chinese == (payload['language'] == 'zh') and all(
-        any(topic.casefold() in body.casefold() for topic in available[identifier]) for identifier in ids
-    )
+    if is_chinese != (payload['language'] == 'zh'):
+        return invalid('language')
+    if not all(any(topic.casefold() in body.casefold() for topic in available[identifier]) for identifier in ids):
+        return invalid('missing_evidence_topic')
+    return True

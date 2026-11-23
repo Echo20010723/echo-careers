@@ -1033,7 +1033,7 @@
 
   async function postDraft(data) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 26000);
+    const timer = setTimeout(() => controller.abort(), 30000);
     try {
       return await api('/api/discovery/drafts', {
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data), signal:controller.signal,

@@ -415,7 +415,7 @@ def test_concrete_fragments_follow_selected_job_and_resume(tmp_path, monkeypatch
         rejected = draft(client,rid,{**deploy,'source_id':'reject-unsupported'},regeneration_id='540be7c3-37d4-4834-8300-9d6120e053b5')
         assert rejected['fallback_reason']=='invalid_output'
         assert '管理 Kubernetes' not in rejected['answer']
-        assert rejected['generation']['attempted']
+        assert rejected['generation']['attempted'] and rejected['generation']['validation']=='unsupported_tool'
         weak = upload(client,'## 教育背景\n计算机科学本科。')
         empty = draft(client,weak,deploy)
         assert empty['fallback_reason']=='no_evidence' and len(sent)==4

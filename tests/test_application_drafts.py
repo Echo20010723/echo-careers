@@ -492,3 +492,28 @@ def test_statement_salvages_only_independently_valid_grounded_text(tmp_path, mon
         if expected=='Workers AI 草稿':
             assert result['generation']['output_adjustment']=='removed_unsupported_outcome_sentence'
             assert result['answer']==safe_text and result['generation']['source']=='fresh'
+
+
+def test_motivation_answers_exact_question_before_model_and_on_timeout(tmp_path, monkeypatch):
+    from app.workers_drafts import WorkersDrafts
+
+    calls = []
+    def worker(request):
+        calls.append((json.loads(request.content), request.extensions['timeout']))
+        raise httpx.ReadTimeout('test deadline', request=request)
+
+    monkeypatch.setattr(WorkersDrafts,'transport',httpx.MockTransport(worker))
+    with TestClient(create_app(configured(tmp_path))) as client:
+        rid = upload(client,PROFILE)
+        statement={'language':'zh','question':'阐述一下，为什么选择这个岗位'}
+        role={**ENGINEERING,'source':'himalayas'}
+        preview=draft(client,rid,role,statement=statement,preview=True)
+        assert not calls and preview['answer'].startswith('我选择这个岗位')
+        assert 'FastAPI' in preview['answer'] and '请结合' not in preview['answer']
+        answer=draft(client,rid,role,statement=statement)
+        assert answer['fallback_reason']=='timeout' and answer['answer']==preview['answer']
+        assert calls[0][0]['model']=='@cf/google/gemma-4-26b-a4b-it'
+        assert calls[0][1]['read'] <= 10
+        assert json.loads(calls[0][0]['messages'][1]['content'])['question_intent']=='motivation'
+        draft(client,rid,ENGINEERING)
+        assert calls[-1][0]['model']=='@cf/qwen/qwen3.8-27b'

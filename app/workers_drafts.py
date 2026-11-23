@@ -42,6 +42,7 @@ class WorkersDrafts:
         self.account = settings.cloudflare_account_id.strip()
         self.token = settings.cloudflare_api_token
         self.model = settings.cloudflare_model.strip()
+        self.statement_model = settings.cloudflare_statement_model.strip() or self.model
         self.agent_enabled = (settings.cloudflare_agent_enabled if settings.cloudflare_agent_enabled is not None
                               else settings.public_mode and self.configured)
         self.daily_limit = settings.cloudflare_daily_drafts
@@ -184,7 +185,12 @@ class WorkersDrafts:
         result, usage = (None, 'provider_error'), None
         upstream = {}
         try:
-            result, usage = self._request(payload, instructions, timeout=self.draft_timeout, max_tokens=480, upstream=upstream)
+            statement = payload.get('kind') == 'statement'
+            timeout = min(10, self.draft_timeout) if statement else self.draft_timeout
+            result, usage = self._request(
+                payload, instructions, timeout=timeout, max_tokens=380 if statement else 480,
+                upstream=upstream, model=self.statement_model if statement else self.model,
+            )
         finally:
             with self.lock:
                 self._record(day, started, result, usage)
@@ -204,7 +210,7 @@ class WorkersDrafts:
         if len(self.cache) > 2048:
             self.cache.popitem(last=False)
 
-    def _request(self, payload, instructions, *, schema=Narrative, timeout=None, max_tokens=384, upstream=None):
+    def _request(self, payload, instructions, *, schema=Narrative, timeout=None, max_tokens=384, upstream=None, model=None):
         usage = None
         try:
             endpoint = f'https://api.cloudflare.com/client/v4/accounts/{self.account}/ai/v1/chat/completions'
@@ -212,14 +218,20 @@ class WorkersDrafts:
             if timeout is not None:
                 wait = min(timeout, self.draft_timeout if schema is Narrative else self.client.timeout.read)
                 request_options['timeout'] = httpx.Timeout(wait, connect=min(2.0, wait))
-            body = {'model':self.model, 'messages':[
+            model = model or self.model
+            body = {'model':model, 'messages':[
                     {'role':'system','content':instructions},
                     {'role':'user','content':json.dumps(payload, ensure_ascii=False)},
             ], 'max_completion_tokens':max_tokens, 'temperature':0.2,
                     'response_format':{'type':'json_object'}, 'stream':False, 'store':False}
-            if self.model == '@cf/qwen/qwen3.8-27b':
+            if model == '@cf/qwen/qwen3.8-27b':
                 body['reasoning_effort'] = 'low'
                 body['chat_template_kwargs'] = {'enable_thinking':False}
+            if model == '@cf/google/gemma-4-26b-a4b-it':
+                body['chat_template_kwargs'] = {'enable_thinking':False}
+                if payload.get('kind') == 'statement':
+                    # Parse and validate model JSON locally without provider JSON Mode.
+                    body.pop('response_format')
             response = self.client.post(endpoint, **request_options, json=body,
                 headers={'Authorization':'Bearer '+self.token.get_secret_value().strip()})
             if upstream is not None:
@@ -256,7 +268,12 @@ class WorkersDrafts:
             choice = envelope['choices'][0]
             if choice.get('finish_reason') not in {None, 'stop', 'length'}:
                 return (None, 'invalid_output'), usage
-            result = schema.model_validate_json(choice['message']['content'])
+            content = choice['message']['content']
+            if schema is Narrative and isinstance(content, str):
+                fenced = re.fullmatch(r'\s*\x60{3}(?:json)?\s*(\{.*\})\s*\x60{3}\s*', content, re.S | re.I)
+                if fenced:
+                    content = fenced[1]
+            result = schema.model_validate_json(content)
             if schema is Narrative:
                 if payload.get('kind') == 'statement':
                     result = verified_statement(result, payload, upstream)

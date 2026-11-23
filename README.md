@@ -82,7 +82,8 @@ Himalayas 有申请 URL 时可直接点击「前往申请」，也可展开「�
 | `CLOUDFLARE_AGENT_ENABLED` | `true` 显式启用；公开环境配置有效凭据后自动启用，本地默认关闭 |
 | `CLOUDFLARE_ACCOUNT_ID` | Workers AI 账户 ID |
 | `CLOUDFLARE_API_TOKEN` | Workers AI REST API Token，启用云端草稿时填写 |
-| `CLOUDFLARE_MODEL` | 可选，默认 `@cf/qwen/qwen3.8-27b` |
+| `CLOUDFLARE_MODEL` | 投递邮件与岗位 Agent，可选，默认 `@cf/qwen/qwen3.8-27b` |
+| `CLOUDFLARE_STATEMENT_MODEL` | Himalayas 申请陈述，可选，默认 `@cf/google/gemma-4-26b-a4b-it` |
 | `CLOUDFLARE_TIMEOUT` | 可选，默认 `16` 秒 |
 | `CLOUDFLARE_DAILY_DRAFTS` | 可选，本进程 UTC 每天默认最多尝试 `100` 次 |
 | `CLOUDFLARE_VISITOR_HOURLY_DRAFTS` | 可选，公开会话滚动一小时默认 `12` 次 |

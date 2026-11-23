@@ -236,8 +236,9 @@ def draft_payload(language, role, target, evidence, sections, *, kind):
 
 
 def generate_narrative(job, data, resume, workers, settings, payload):
+    model = workers.statement_model if data.statement else workers.model
     trace = {'source':'preview' if data.preview else 'fallback', 'provider':'cloudflare_workers_ai',
-             'configured_model':workers.model}
+             'configured_model':model}
     if data.preview:
         return None, None, trace
     filename = 'application_statement.txt' if data.statement else 'application_draft.txt'
@@ -245,7 +246,7 @@ def generate_narrative(job, data, resume, workers, settings, payload):
     cache_key = digest(dumps([
         resume['id'], resume['version'], job.model_dump(mode='json'),
         data.model_dump(mode='json', exclude={'preview','regeneration_id','application_job'}),
-        payload, instructions, workers.model,
+        payload, instructions, model,
     ]))
     narrative, reason = workers.generate(payload, instructions, scope=settings.data_dir,
         public=settings.public_mode, cache_key=cache_key, regeneration_id=data.regeneration_id, trace=trace)
@@ -254,13 +255,13 @@ def generate_narrative(job, data, resume, workers, settings, payload):
 
 QUESTION_INTENTS = (
     ('introduction', r'自我介绍|(?:介绍|说说|谈谈).{0,12}(?:你?自己|你的背景|个人背景)|introduce yourself|(?:tell|talk to) (?:us|me) about yourself|your background'),
+    ('motivation', r'为什么(?:想|选择|选|申请|投递|应聘)|为何(?:选择|选|申请|应聘)|兴趣|动机|motiv|interest|attract|why (?:this|do you want|did you (?:choose|apply))'),
     ('strengths_and_growth', r'优缺点|优劣势|(?:优点|优势).{0,18}(?:缺点|不足|短板)|strengths?.{0,35}weakness|pros and cons'),
     ('growth', r'缺点|不足|短板|需要改进|weakness|areas? (?:for improvement|to improve)'),
     ('strengths', r'优点|强项|最擅长|strength|what are you good at'),
     ('approach', r'(?:你会|该怎么|会如何|如何|怎么|怎样).{0,12}(?:排查|处理|设计|解决|验证)|how would you|what would you do'),
     ('challenge', r'挑战|调试|故障|如何解决|challeng|debug|troubleshoot|how did you solve'),
     ('collaboration', r'协作|合作|团队|collaborat|teamwork|worked with'),
-    ('motivation', r'兴趣|为什么想|动机|motiv|interest|attract|why (?:this|do you want)'),
     ('fit', r'匹配|适合|胜任|优势|good fit|why .* fit|qualification|strength|suitable'),
     ('experience', r'经验|经历|项目|举例|example|experience|project'),
 )
@@ -361,8 +362,16 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
             return main+'\n\n'+('可再补充这次工作的背景、分工或验证过程。' if zh else
                                  'Add the actual context, your contribution or how you verified the work.')
         if intent == 'motivation':
-            fit = ('这个岗位吸引我的地方，是有机会把上述经验用于新的实际问题。' if zh else
-                   'I am interested in applying this experience to the practical problems the role addresses.')
+            requirement = topics(evidence[0]['requirement'] or '', language)
+            aligned = [term for term in requirement if term in evidence[0]['topics']]
+            focus = aligned[:2] or (duties[0][:2] if duties else [])
+            if zh:
+                opener = ('我选择这个岗位，是因为它涉及'+'和'.join(focus)+'，我希望将已有的实践用于这些工作。'
+                          if focus else '我选择这个岗位，是希望把已有的实践用到新的工作场景中。')
+            else:
+                opener = ('I chose this role for the opportunity to work on '+' and '.join(focus)+'.'
+                          if focus else 'I chose this role for the opportunity to apply my practical experience in a new setting.')
+            return opener+'\n\n'+main
         return main+'\n\n'+fit
 
     examples = []
@@ -380,9 +389,9 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
             use = ('我有'+linked+'的实践经历，希望把这些经验用于这个岗位。' if zh else
                    f'My background includes hands-on work in {linked}, which I would bring to this role.')
         elif intent == 'motivation' and zh:
-            use = '岗位中的'+linked+'吸引我，因为我做过相关实践。'
+            use = '我想把'+linked+'的实践经验用于这个岗位。'
         elif intent == 'motivation':
-            use = f'I am drawn to work on {linked} because it builds on my previous experience.'
+            use = f'I chose this role to build on my experience with {linked}.'
         elif intent in {'challenge','collaboration','experience'}:
             use = ('相关项目实践包括'+linked+'。' if zh else
                    f'One example from my project work is {linked}.')
@@ -413,6 +422,7 @@ def assemble_statement(job, data, resume, workers, settings):
     )
     duties = statement_duties(sections, language, role, question_topics)
     payload = draft_payload(language, role, target, evidence, sections, kind='statement')
+    payload['job_requirements'] = {key: payload['job_requirements'][key][:2] for key in ('duties','required')}
     payload.update(duties=duties, question_intent=intent, question_topics=question_topics, limit=options.limit)
     resume_skills = {term.casefold() for term in skill_hits(resume['text'])}
     gap = next((term for term in skill_hits(' '.join(sections['required']))
@@ -428,7 +438,7 @@ def assemble_statement(job, data, resume, workers, settings):
     if intent in {'manual','eligibility'}:
         narrative, reason = None, 'question_needs_input' if missing or intent == 'manual' else None
         trace = {'source':'preview' if data.preview else 'fallback', 'provider':'cloudflare_workers_ai',
-                 'configured_model':workers.model}
+                 'configured_model':workers.statement_model}
     else:
         narrative, reason, trace = generate_narrative(job, data, resume, workers, settings, payload)
     answer = narrative.body if narrative else statement_fallback(language,intent,duties,evidence,options.limit,gap)

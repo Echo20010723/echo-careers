@@ -933,7 +933,7 @@
       application = applicationDrafts.get(draftKey);
     }
     const openJD = root.dataset.jobKey === jobKey(job) && root.querySelector('.job-description')?.open;
-    const openAnalysis = root.dataset.jobKey === jobKey(job) && root.querySelector('.offer-match-details')?.open;
+    const openAnalysis = root.dataset.jobKey === jobKey(job) ? root.querySelector('.offer-match-details')?.open : undefined;
     root.dataset.jobKey = jobKey(job);
     if (application && application.parentElement === root) {
       for (const child of [...root.children]) if (child !== application) child.remove();
@@ -990,8 +990,8 @@
       for (const [label, items] of highlights) {
         if (items.length) detail.append(el('p',label+' · '+items.join('；')));
       }
-      notes.open = Boolean(openAnalysis);
-      notes.append(el('summary','展开完整匹配明细'));
+      notes.open = openAnalysis ?? true;
+      notes.append(el('summary','岗位与匹配明细'));
       detail.append(notes);
     }
     notes.append(el('p',evaluationNames[analysis.evaluation_mode],'muted'));
@@ -1254,7 +1254,7 @@
           if (!sameResume()) return;
           replace(slot,preview);
         }
-        slot.status = '正在生成。可先编辑或复制基础草稿。';
+        slot.status = '参考答复已就绪，可编辑或复制。正在生成模型稿。';
         show();
         const draft = await postDraft(refresh ?
           {...request,regeneration_id:crypto.randomUUID()} : request);

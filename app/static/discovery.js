@@ -909,10 +909,13 @@
     const heading = el('div',undefined,'detail-heading');
     heading.append(el('h3',job.title || '未提供岗位名'));
     const analysis = job.analysis;
+    const compact = job.source === 'offerdao';
     const origin = platformNames[job.source];
     const metadata = el('div', undefined, 'discovery-job-meta muted');
-    for (const value of [job.company, job.team, job.city, job.employment_type, job.salary_raw, job.published_at && '发布于 '+job.published_at, origin && '来源 · '+origin,
-      job.detail_status === 'detail' ? '已读取详情' : '仅列表 · 完整 JD 待核对'].filter(Boolean)) {
+    const metaValues = [job.company, compact ? null : job.team, job.city, job.employment_type, job.salary_raw,
+      !compact && job.published_at && '发布于 '+job.published_at, origin && '来源 · '+origin,
+      job.detail_status === 'detail' ? (!compact && '已读取详情') : '仅列表 · 完整 JD 待核对'];
+    for (const value of metaValues.filter(Boolean)) {
       metadata.append(el('span', value));
     }
     heading.append(metadata);
@@ -930,6 +933,7 @@
       application = applicationDrafts.get(draftKey);
     }
     const openJD = root.dataset.jobKey === jobKey(job) && root.querySelector('.job-description')?.open;
+    const openAnalysis = root.dataset.jobKey === jobKey(job) && root.querySelector('.offer-match-details')?.open;
     root.dataset.jobKey = jobKey(job);
     if (application && application.parentElement === root) {
       for (const child of [...root.children]) if (child !== application) child.remove();
@@ -944,7 +948,7 @@
         {duration:150,easing:'ease-out'});
     }
     if (job.retrieved_by?.length) detail.append(el('p','来源检索词 · '+job.retrieved_by.join('、'),'muted'));
-    if (job.lexical_matches?.length) detail.append(el('p','标题或 JD 文本命中 · '+job.lexical_matches.join('、'),'muted'));
+    if (!compact && job.lexical_matches?.length) detail.append(el('p','标题或 JD 文本命中 · '+job.lexical_matches.join('、'),'muted'));
     if (job.remote) {
       const locations = job.location_restrictions || [];
       const timezones = job.timezone_restrictions || [];
@@ -975,7 +979,22 @@
     const conflicts = analysis.conditions.filter(item => item.status === '冲突').length;
     if (unknown || conflicts) strip.append(el('span',[unknown && '待核对 '+unknown+' 项',
       conflicts && '冲突 '+conflicts+' 项'].filter(Boolean).join(' · '),'condition-count'));
-    detail.append(strip,el('p',analysis.reason),el('p',evaluationNames[analysis.evaluation_mode],'muted'));
+    detail.append(strip,el('p',analysis.reason));
+    const notes = compact ? el('details',undefined,'offer-match-details') : detail;
+    if (compact) {
+      const highlights = [
+        ['条件冲突', analysis.conditions.filter(item=>item.status === '冲突').map(item=>item.name+(item.evidence?' · '+item.evidence:''))],
+        ['简历证据', analysis.evidence.slice(0,1).map(item=>'第 '+item.line+' 行 · '+item.quote)],
+        ['主要缺口', analysis.gaps.slice(0,3)],
+      ];
+      for (const [label, items] of highlights) {
+        if (items.length) detail.append(el('p',label+' · '+items.join('；')));
+      }
+      notes.open = Boolean(openAnalysis);
+      notes.append(el('summary','展开完整匹配明细'));
+      detail.append(notes);
+    }
+    notes.append(el('p',evaluationNames[analysis.evaluation_mode],'muted'));
     const groups = [
       ['硬条件核对', analysis.conditions.map(item=>item.name+' · '+item.status+(item.evidence?' · '+item.evidence:''))],
       ['最相关简历证据', analysis.evidence.map(item=>'第 '+item.line+' 行 · '+item.quote)],
@@ -986,13 +1005,14 @@
       ['向 HR 确认', analysis.questions],
     ];
     for(const [title, items] of groups){
-      detail.append(el('h4',title));
-      if(!items.length){detail.append(el('p','暂无可核实信息','muted')); continue;}
+      if (compact && !items.length) continue;
+      notes.append(el('h4',title));
+      if (!items.length) { notes.append(el('p','暂无可核实信息','muted')); continue; }
       const list = el('ul');
       list.append(...items.map(item=>el('li',item)));
-      detail.append(list);
+      notes.append(list);
     }
-    detail.append(el('h4','下一步投递建议'),el('p',analysis.recommendation));
+    notes.append(el('h4','下一步投递建议'),el('p',analysis.recommendation));
     if (batch?.mode === 'source_page' && terminal(batch.stage) && taskId && batch.resume?.id === resumeId) {
       const rerun = el('button','重跑此岗位','secondary');
       rerun.type = 'button';
@@ -1006,9 +1026,9 @@
         } catch (problem) { error(problem.message); }
         finally { rerun.disabled = false; }
       };
-      detail.append(rerun);
+      notes.append(rerun);
     }
-    detail.append(draftPanel(job));
+    notes.append(draftPanel(job));
     appendJobSource(detail, job, openJD);
   }
 
@@ -1310,6 +1330,8 @@
     let modified = false, active = false, proposal = null;
     const mode = el('p',undefined,'muted');
     const traceLabel = el('p',undefined,'muted');
+    const draftDetails = el('details');
+    draftDetails.append(el('summary','草稿依据与生成详情'));
     const subject = el('input');
     const subjectLabel = el('label','主题');
     subjectLabel.append(subject);
@@ -1338,10 +1360,10 @@
       subject.value = draft.subject;
       body.value = draft.answer;
       guidance.replaceChildren(el('p','建议附件名 · '+draft.attachment_name),
-        el('p','发送前请手动附上简历，并核对收件人和原帖的附件要求。'));
-      for (const item of draft.evidence || []) {
-        guidance.append(el('p',draftEvidenceText(item)));
-      }
+        el('p','发送前请附上简历，核对收件人和附件要求。'));
+      const detailLines = (draft.evidence || []).map(item=>el('p',draftEvidenceText(item)));
+      draftDetails.replaceChildren(draftDetails.firstElementChild,traceLabel,...detailLines);
+      if (job.source !== 'offerdao') guidance.append(...detailLines);
       for (const hint of draft.guidance) guidance.append(el('p',hint));
       updateLink();
     }
@@ -1383,7 +1405,9 @@
           const preview = await postDraft({...inputs,preview:true});
           if (!stillCurrent()) return;
           fill(preview);
-          editor.append(mode,traceLabel,subjectLabel,bodyLabel,controls,guidance);
+          editor.append(mode,subjectLabel,bodyLabel,controls,guidance);
+          if (job.source === 'offerdao') editor.append(draftDetails);
+          else editor.prepend(traceLabel);
           signatureLabel.hidden = true;
         }
         status.textContent = '正在生成正文。现在可以编辑或复制基础草稿。';
@@ -1398,7 +1422,7 @@
         }
         status.textContent = draft.fallback_reason
           ? reasons[draft.fallback_reason] || '可继续编辑基础草稿。'
-          : modified ? '新草稿待采用，当前编辑已保留。'+draftTraceText(draft) : '模型草稿已就绪。';
+          : modified ? '新草稿待采用，当前编辑已保留。' : '模型草稿已就绪。';
       } catch (problem) { if (stillCurrent()) status.textContent = problem.message; }
       finally {
         active = false;

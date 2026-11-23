@@ -189,7 +189,8 @@ class WorkersDrafts:
             with self.lock:
                 self._record(day, started, result, usage)
                 saved = (result, upstream)
-                self._remember((key, None), saved)
+                if result[0]:
+                    self._remember((key, None), saved)
                 if regeneration_id:
                     self._remember(lookup, saved)
                 future.set_result(saved)

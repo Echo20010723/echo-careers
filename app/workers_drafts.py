@@ -257,8 +257,13 @@ class WorkersDrafts:
             if choice.get('finish_reason') not in {None, 'stop', 'length'}:
                 return (None, 'invalid_output'), usage
             result = schema.model_validate_json(choice['message']['content'])
-            if schema is Narrative and not supported(result, payload, upstream):
-                return (None, 'invalid_output'), usage
+            if schema is Narrative:
+                if payload.get('kind') == 'statement':
+                    result = verified_statement(result, payload, upstream)
+                elif not supported(result, payload, upstream):
+                    result = None
+                if result is None:
+                    return (None, 'invalid_output'), usage
             return (result, None), usage
         except httpx.TimeoutException:
             return (None, 'timeout'), usage
@@ -284,6 +289,30 @@ def statement_length(body, language):
     return len(''.join(body.split())) if language == 'zh' else len(body.split())
 
 
+OUTCOME_CLAIM = r'确保.{0,16}(?:稳定(?:运行)?|零故障|高可用)|显著(?:提升|降低|减少)|独立(?:主导|负责|完成)|' \
+                r'\b(?:single-handedly|guaranteed (?:uptime|stability)|ensured (?:stable|stability|uptime))\b'
+
+
+def verified_statement(narrative, payload, trace):
+    details = trace if trace is not None else {}
+    if supported(narrative, payload, details):
+        return narrative
+    if details.get('validation') != 'unsupported_outcome':
+        return None
+    sentences = re.split(r'(?<=[。！？；])|(?<=[.!?;])(?=\s|$)', narrative.body)
+    clean_body = ''.join(sentence for sentence in sentences if not re.search(OUTCOME_CLAIM, sentence, re.I)).strip()
+    language = payload['language']
+    original_size = statement_length(narrative.body, language)
+    if len(clean_body) < 12 or statement_length(clean_body, language) < original_size * .6:
+        return None
+    revised = narrative.model_copy(update={'body':clean_body})
+    if not supported(revised, payload):
+        return None
+    details.pop('validation', None)
+    details['output_adjustment'] = 'removed_unsupported_outcome_sentence'
+    return revised
+
+
 def supported(narrative, payload, trace=None):
     def invalid(code):
         if trace is not None:
@@ -307,9 +336,7 @@ def supported(narrative, payload, trace=None):
     known_numbers = {canon(match.group()) for match in re.finditer(numeric_claim,cited_quotes,re.I)}
     if any(canon(match.group()) not in known_numbers for match in re.finditer(numeric_claim,body,re.I)):
         return invalid('unsupported_number')
-    outcome_claim = r'确保.{0,16}(?:稳定(?:运行)?|零故障|高可用)|显著(?:提升|降低|减少)|独立(?:主导|负责|完成)|' \
-                    r'\b(?:single-handedly|guaranteed (?:uptime|stability)|ensured (?:stable|stability|uptime))\b'
-    if re.search(outcome_claim, body, re.I) and not re.search(outcome_claim, cited_quotes, re.I):
+    if re.search(OUTCOME_CLAIM, body, re.I) and not re.search(OUTCOME_CLAIM, cited_quotes, re.I):
         return invalid('unsupported_outcome')
     # A detail present only in a vacancy can describe the role, not past experience.
     prior_work = re.compile(r'做过|负责过|维护过|曾|过往|此前|我(?:使用|用|实现|开发|维护|参与|管理)|'
@@ -324,6 +351,12 @@ def supported(narrative, payload, trace=None):
                  r'\b(?:I am authorized to work|I do not require sponsorship)\b|无需签证|有工作许可', body, re.I | re.M):
         return invalid('mail_or_eligibility')
     if payload.get('kind') == 'statement':
+        if payload.get('question_intent') in {'strengths_and_growth','growth'} and not re.search(
+            r'短板|不足|改进|补强|补充|加强|提升|待核对|需要.{0,15}(?:积累|学习|案例|确认)|'
+            r'\b(?:weakness|improv\w*|development area|room to grow|gap|build on|further experience|substantiate)\b',
+            body, re.I,
+        ):
+            return invalid('missing_growth_answer')
         if re.search(r'谢谢您的考虑|感谢您审阅', body):
             return invalid('statement_signoff')
         if len(re.split(r'\n\s*\n', body)) > 2:

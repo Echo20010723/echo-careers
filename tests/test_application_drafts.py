@@ -481,7 +481,7 @@ def test_statement_salvages_only_independently_valid_grounded_text(tmp_path, mon
 
     def worker(request):
         return httpx.Response(200,json={'choices':[{'message':{'content':json.dumps({
-            'body':safe_text+'最终显著提升了团队的运营效率。', 'evidence_ids':['E1'],
+            'body':safe_text+'最终显著提升了团队的运营效率。这一结果也关系到交付。', 'evidence_ids':['E1'],
         })}}]})
 
     monkeypatch.setattr(WorkersDrafts,'transport',httpx.MockTransport(worker))

@@ -300,7 +300,20 @@ def verified_statement(narrative, payload, trace):
     if details.get('validation') != 'unsupported_outcome':
         return None
     sentences = re.split(r'(?<=[。！？；])|(?<=[.!?;])(?=\s|$)', narrative.body)
-    clean_body = ''.join(sentence for sentence in sentences if not re.search(OUTCOME_CLAIM, sentence, re.I)).strip()
+    retained = []
+    removed = False
+    for sentence in sentences:
+        if re.search(OUTCOME_CLAIM, sentence, re.I):
+            removed = True
+            continue
+        if removed and re.match(
+            r'\s*(?:这(?:一|项|种|段)|上述|由此|因此|该(?:工作|实践|经历|结果)|'
+            r'(?:this|that) (?:work|experience|approach|result)|as a result|therefore)', sentence, re.I,
+        ):
+            continue
+        retained.append(sentence)
+        removed = False
+    clean_body = ''.join(retained).strip()
     language = payload['language']
     original_size = statement_length(narrative.body, language)
     if len(clean_body) < 12 or statement_length(clean_body, language) < original_size * .6:

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse,FileResponse,Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from .settings import Settings
-from .runtime import runtime_revision
+from .runtime import project_identity, runtime_revision
 from .service import Service
 from .schemas import JobBatch,ConversationInput,MessageInput,ModeInput,TaskInput,Preferences,AssistantStartInput,JobInput,BrowserPairInput,BrowserImportInput,BossNativeEvent
 from .errors import AppError
@@ -32,6 +32,11 @@ def create_app(settings=None, *, _public_scope=False, _offerdao=None, _workers_d
         from .public import create_public_app
         return create_public_app(settings, create_app, offerdao, workers_drafts)
     revision = runtime_revision(settings.root) if not _public_scope else None
+    local_identity = {} if _public_scope else {
+        'project_identity': project_identity(settings.root),
+        'launcher_instance': os.getenv('ECHO_WORKBENCH_LAUNCHER_INSTANCE'),
+        'offerdao_base': offerdao.base,
+    }
     service=Service(settings)
     discovery=Discovery(service)
     agent=DiscoveryAgent(service, discovery, workers_drafts)
@@ -134,7 +139,7 @@ def create_app(settings=None, *, _public_scope=False, _offerdao=None, _workers_d
         return {'status':'ok','app':'career-workbench','version':'1.4.0','pid':os.getpid(),
                 'model_mode':settings.model_mode,'simulated_model':service.provider.simulated,'schema_version':1,
                 'runtime_revision':revision,'offerdao_ready':offerdao.ready,'draft_usage':workers_drafts.usage(),
-                'agent_provider':agent.model_provider()}
+                'agent_provider':agent.model_provider(), **local_identity}
     @app.get('/api/state')
     def state(): return service.snapshot()
     @app.get('/api/resumes/{rid}')

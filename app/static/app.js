@@ -13,7 +13,23 @@ async function api(path,method='GET',body) {
 async function run(fn,button,workingText){busy++;const old=button?.textContent;try{if(button){button.disabled=true;button.setAttribute('aria-busy','true');if(workingText)button.textContent=workingText;}await fn();await refresh();}catch(e){notice(e.message,true);}finally{busy--;if(button){button.disabled=false;button.removeAttribute('aria-busy');if(workingText)button.textContent=old;}}}
 function action(label,fn,cls='secondary'){const b=el('button',label,cls);b.onclick=()=>run(fn,b);return b;}
 function list(id,items,render,empty='暂无记录'){const n=$(id);n.replaceChildren();if(!items.length)n.append(el('p',empty,'empty'));else items.forEach(x=>n.append(render(x)));}
-const mainNav = document.querySelector('.site-header nav');
+const mainNav = $('main-nav');
+const mobileNavToggle = $('mobile-nav-toggle');
+function closeMobileNav(restoreFocus = false) {
+  if (mobileNavToggle.getAttribute('aria-expanded') !== 'true') return;
+  mobileNavToggle.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) mobileNavToggle.focus();
+}
+mobileNavToggle.addEventListener('click', () => {
+  const open = mobileNavToggle.getAttribute('aria-expanded') === 'true';
+  mobileNavToggle.setAttribute('aria-expanded', String(!open));
+});
+document.addEventListener('click', event => {
+  if (!mainNav.contains(event.target) && !mobileNavToggle.contains(event.target)) closeMobileNav();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeMobileNav(true);
+});
 const navButtons = [...mainNav.querySelectorAll('button[data-tab]')];
 const routeTabs = new Set(navButtons.map(button => button.dataset.tab));
 const pageScroll = new Map();
@@ -52,7 +68,10 @@ function syncTabLocation() {
   const requested = location.hash.slice(1);
   tab(routeTabs.has(requested) ? requested : 'discovery',{updateHistory:false});
 }
-navButtons.forEach(button => button.onclick = () => tab(button.dataset.tab));
+navButtons.forEach(button => button.onclick = () => {
+  closeMobileNav(true);
+  tab(button.dataset.tab);
+});
 new ResizeObserver(positionNavIndicator).observe(mainNav);
 window.addEventListener('popstate',syncTabLocation);
 window.addEventListener('hashchange',syncTabLocation);

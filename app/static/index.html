@@ -8,29 +8,30 @@
   <script src="/static/theme.js?v=1"></script>
   <link rel="preload" href="/static/quicksand-latin-700.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/geist-pixel-circle.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/style.css?v=39">
-  <script defer src="/static/app.js?v=7"></script>
+  <link rel="stylesheet" href="/static/style.css?v=43">
+  <script defer src="/static/app.js?v=8"></script>
   <script defer src="/static/filter-picker.js?v=1"></script>
   <script defer src="/static/discovery.js?v=39"></script>
   <script defer src="/static/discovery-layout.js?v=1"></script>
-  <script defer src="/static/hero-terrain.js?v=5"></script>
+  <script defer src="/static/hero-terrain.js?v=12"></script>
 </head>
 <body>
   <div class="site-header">
   <header class="shell">
     <a class="brand" href="/" aria-label="Echo Careers 首页"><img src="/static/echo-logo-small.png" width="30" height="34" alt=""> <span class="brand-wordmark">Echo Careers</span></a>
-    <nav aria-label="工作台导航">
-      <button data-tab="discovery" class="active" aria-current="page">岗位发现</button>
-      <button data-tab="records">跟进记录</button>
-      <button data-tab="assistant">沟通草稿</button>
-      <button data-tab="materials">简历与偏好</button>
-    </nav>
     <div id="theme-switch" class="theme-switch" role="group" aria-label="页面主题">
       <input type="radio" name="theme" value="light" id="theme-light">
       <label for="theme-light"><span class="theme-icon" aria-hidden="true">☀</span><span class="theme-name">浅色</span></label>
       <input type="radio" name="theme" value="dark" id="theme-dark" checked>
       <label for="theme-dark"><span class="theme-icon" aria-hidden="true">☾</span><span class="theme-name">深色</span></label>
     </div>
+    <button type="button" id="mobile-nav-toggle" aria-label="导航菜单" aria-controls="main-nav" aria-expanded="false"><span aria-hidden="true"></span></button>
+    <nav id="main-nav" aria-label="工作台导航">
+      <button data-tab="discovery" class="active" aria-current="page">岗位发现</button>
+      <button data-tab="records">跟进记录</button>
+      <button data-tab="assistant">沟通草稿</button>
+      <button data-tab="materials">简历与偏好</button>
+    </nav>
   </header>
   </div>
   <div class="shell">
@@ -39,7 +40,7 @@
     <section id="discovery" class="tab active">
       <div id="discovery-intake" class="landing">
         <section class="landing-hero" aria-labelledby="landing-title">
-          <div class="hero-material" aria-hidden="true"></div>
+          <div class="hero-material" aria-hidden="true"><canvas class="hero-surface"></canvas></div>
           <div class="landing-copy">
             <h1 id="landing-title" class="landing-title" lang="en"><span class="title-lead">Intelligence</span>
               <span class="title-tail"><span>Designed To</span> <span>Match</span></span></h1>

@@ -14,7 +14,7 @@ config/config.yaml config/error_messages.json config/logging_rules.json config/o
 examples/resume_demo.md examples/jobs_demo.json examples/agent_jobs.json
 docs/agent-evaluation.md docs/cross-industry-benchmark.md docs/hero-motion-prompt.md
 scripts/launch.py scripts/evaluate_agent.py scripts/evaluate_cross_industry.py scripts/smoke_public.py scripts/export_public.py
-tests/test_discovery.py tests/test_discovery_agent.py tests/test_public_workbench.py tests/test_cross_industry.py tests/test_offerdao.py tests/test_application_drafts.py
+tests/test_discovery.py tests/test_discovery_agent.py tests/test_public_workbench.py tests/test_cross_industry.py tests/test_offerdao.py tests/test_application_drafts.py tests/test_windows_launcher.py
 app/static/hero-grain.png app/static/geist-pixel-circle.woff2 app/static/geist-pixel-OFL.txt
 app/static/quicksand-latin-700.woff2 app/static/quicksand-OFL.txt
 app/static/echo-logo.png app/static/echo-logo-small.png app/static/resume-demo.md app/static/jobs-example.json

@@ -585,3 +585,66 @@ def test_statement_accepts_grounded_paraphrase_and_reports_distinct_rejections(t
         assert result['generation'].get('validation')==expected
         assert result['mode']==('基础草稿' if expected else 'Workers AI 草稿')
         assert '82%' not in result['answer'] and '我主导' not in result['answer']
+
+
+def test_pdf_list_marker_maps_at_source_and_stays_out_of_both_drafts(tmp_path):
+    from io import BytesIO
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    from app.application_draft import statement_evidence_index
+    from app.resumes import read_resume
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=500, height=180)
+    cmap = DecodedStreamObject()
+    cmap.set_data(b'1 beginbfchar\n<B7> <F09F>\nendbfchar')
+    font = DictionaryObject({
+        NameObject('/Type'): NameObject('/Font'),
+        NameObject('/Subtype'): NameObject('/Type1'),
+        NameObject('/BaseFont'): NameObject('/Helvetica'),
+        NameObject('/Encoding'): NameObject('/WinAnsiEncoding'),
+        NameObject('/ToUnicode'): writer._add_object(cmap),
+    })
+    page[NameObject('/Resources')] = DictionaryObject({
+        NameObject('/Font'): DictionaryObject({NameObject('/F1'):font}),
+    })
+    stream = DecodedStreamObject()
+    stream.set_data(
+        b'BT /F1 10 Tf 20 145 Td (Work Experience) Tj 0 -15 Td '
+        b'(\267 Maintained Kubernetes clusters and Prometheus alerts) Tj 0 -15 Td '
+        b'(using C++, C#, CI/CD and .NET tools.) Tj 0 -15 Td '
+        b'(\267 Maintained Jenkins CI/CD workflows and checked service deployment.) Tj ET'
+    )
+    page[NameObject('/Contents')] = writer._add_object(stream)
+    fixture = BytesIO()
+    writer.write(fixture)
+    pdf = fixture.getvalue()
+    assert '\uf09f' in PdfReader(BytesIO(pdf)).pages[0].extract_text()
+    text = read_resume('bullets.pdf',pdf)
+    assert '• Maintained Kubernetes' in text and '\uf09f' not in text
+    fragments = list(statement_evidence_index(text))
+    assert fragments[0]['line'] == 2 and fragments[1]['line'] == 4
+    assert 'C++, C#, CI/CD and .NET' in fragments[0]['quote']
+    assert 'Jenkins' not in fragments[0]['quote']
+    legacy = '工作经历\n\uf09f 维护 Kubernetes 集群与监控，。\n\uf09f 维护 Jenkins 发布流水线，'
+    job = {'title':'DevOps Engineer','jd':'Maintain Kubernetes clusters and Jenkins CI/CD pipelines.'}
+    with TestClient(create_app(Settings(data_dir=tmp_path))) as client:
+        upload_result = client.post('/api/discovery/resumes',files={'file':('bullets.pdf',pdf,'application/pdf')})
+        assert upload_result.status_code == 200
+        rid = upload_result.json()['id']
+        statement = draft(client,rid,{**job,'source':'himalayas'},statement={'language':'en'})
+        assert 'Kubernetes' in statement['answer'] and 'C++, C#, CI/CD and .NET' in statement['answer']
+        rid = upload(client, legacy)
+        for source in ('himalayas','offerdao'):
+            extra = {'statement':{'language':'zh','question':'你最擅长什么？'}} if source=='himalayas' else {}
+            output = draft(client,rid,{**job,'source':source},**extra)
+            assert '\uf09f' not in output['answer'] and '，。' not in output['answer']
+            assert [e['line'] for e in output['evidence']] == [2,3]
+
+
+def test_unreadable_body_placeholder_is_retained_for_review_only():
+    from app.application_draft import statement_evidence_index
+    from app.resumes import normalize_resume_bullets
+    text = '工作经历\n维护 Linux �服务\n• 排查 □ 状态和 C++、C#、.NET'
+    assert normalize_resume_bullets(text) == text
+    assert [(item['line'],item['quote']) for item in statement_evidence_index(text)] == [(3,'排查 □ 状态和 C++、C#、.NET')]

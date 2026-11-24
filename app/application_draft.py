@@ -3,7 +3,7 @@ from pathlib import PurePath
 import re
 
 from .discovery_rules import evidence_index, skill_hits, split_job_text
-from .resumes import digest
+from .resumes import digest, normalize_resume_bullets
 from .policy import unsafe_instruction
 from .store import dumps
 from .workers_drafts import statement_length
@@ -71,7 +71,8 @@ def safe_excerpt(text):
         return ''
     text = re.sub(r'https?://\S+|[\w.+-]+@[\w.-]+\.\w+|\+?\d[\d ()-]{8,}\d', '[省略]', text)
     text = re.sub(r'(?:姓名|手机号|电话|邮箱|地址|微信|身份证|phone|email|address)\s*[:：]\s*[^，。;；]+', '[省略]', text, flags=re.I)
-    return re.sub(r'^\s*\d{1,2}[.)、．]\s*', '', text).strip()[:280]
+    text = re.sub(r'^\s*(?:\d{1,2}[.)、．]|[•▪●])\s*', '', text).strip()
+    return text[:280]
 
 
 def job_context(job):
@@ -88,6 +89,7 @@ def job_context(job):
 
 def statement_evidence_index(text):
     """Rejoin adjacent PDF wraps while keeping the starting resume line number."""
+    text = normalize_resume_bullets(text)
     raw = text.splitlines()
     items = iter(evidence_index(text))
     current = next(items, None)
@@ -95,7 +97,7 @@ def statement_evidence_index(text):
     while current:
         first = current.copy()
         end = first['line']
-        quote = raw[end-1].strip(' \t#-*')
+        quote = raw[end-1].strip(' \t#-*•▪●')
         current = next(items, None)
         while (current and current['line'] == end+1 and end-first['line'] < 2
                and current['category'] == first['category']
@@ -237,7 +239,7 @@ def assemble_application(job, data, resume, workers, settings):
 def evidence_paragraphs(evidence, language, *, precise=False):
     paragraphs = []
     for index, item in enumerate(evidence):
-        quote = item['quote'].rstrip('。.!;； ')
+        quote = item['quote'].rstrip('。.!！？?;；、，,：: ')
         requirement = (item['requirement'] or '').rstrip('。.!;； ')
         language_matches = lambda fragment: bool(re.search(r'[\u3400-\u9fff]',fragment)) == (language == 'zh')
         if precise:
@@ -252,12 +254,20 @@ def evidence_paragraphs(evidence, language, *, precise=False):
                 if re.match(r'^(?:负责|参与|维护|使用|通过|部署|编写|开发|搭建|构建|建设|实现|管理|处理|排查|配置|完成)', quote):
                     first = '我'+quote
             else:
-                first = (quote if quote.startswith('我') else '我曾'+quote) if language_matches(quote) else '我的实际工作涉及'+'、'.join(item['topics'])
+                first = (quote if quote.startswith('我') else '我曾'+quote) if language_matches(quote) else '我的实际工作涉及'+'、'.join(item['topics'][:3])
             fit = '这与岗位要求的「'+requirement+'」直接相关。' if requirement and index == 0 else ''
             paragraphs.append(first+'。'+fit)
         else:
-            first = ('I '+quote[0].lower()+quote[1:] if not re.match(r'I\b',quote,re.I) else quote
-                     ) if language_matches(quote) else 'My practical work covered '+', '.join(item['topics'])
+            if language_matches(quote):
+                first = quote
+                if re.match(r'I\b',quote,re.I):
+                    pass
+                elif re.match(r'^(?:built|developed|implemented|designed|tested|wrote|analysed|analyzed|deployed|validated|contributed|participated|maintained|monitored|operated|troubleshot)\b',quote,re.I):
+                    first = 'I '+quote[0].lower()+quote[1:]
+                else:
+                    first = 'My relevant experience includes: '+quote
+            else:
+                first = 'My practical work covered '+', '.join(item['topics'][:3])
             fit = ' This experience relates to the role requirement: '+requirement+'.' if requirement and index == 0 else ''
             paragraphs.append(first+'.'+fit)
     return paragraphs
@@ -285,7 +295,7 @@ def generate_narrative(job, data, resume, workers, settings, payload):
     cache_key = digest(dumps([
         resume['id'], resume['version'], job.model_dump(mode='json'),
         data.model_dump(mode='json', exclude={'preview','regeneration_id','application_job'}),
-        payload, instructions, model,
+        payload, instructions, model, 'resume-list-boundaries-v2',
     ]))
     narrative, reason = workers.generate(payload, instructions, scope=settings.data_dir,
         public=settings.public_mode, cache_key=cache_key, regeneration_id=data.regeneration_id, trace=trace)
@@ -404,13 +414,15 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
             return message
         return message[:limit] if zh else ' '.join(message.split()[:limit])
 
+    if limit is not None:
+        complete = statement_fallback(language, intent, duties, evidence, None, gap)
+        if statement_length(complete, language) <= limit:
+            return complete
     if limit is None:
         paragraphs = evidence_paragraphs(evidence, language, precise=True)
         if intent in {'strengths','strengths_and_growth','takeover','approach'}:
             paragraphs = [paragraph.split('这与岗位要求的「',1)[0].split(' This experience relates to the role requirement:',1)[0] for paragraph in paragraphs]
-        if len(paragraphs) > 1:
-            paragraphs[1] = ('另一段相关经历是：' if zh else 'A second relevant example: ') + paragraphs[1]
-        main = ' '.join(paragraphs)
+        main = '\n'.join(paragraphs)
         direct = bool(evidence[0]['requirement'])
         fit = ('我希望把这套实际工作方法用于岗位的相关职责。' if zh else
                'I would bring that practical approach to the relevant responsibilities of this role.')
@@ -460,6 +472,7 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
                f'My work on {linked} is relevant to the responsibilities of this role.')
         if intent in {'strengths','strengths_and_growth','takeover','approach'}:
             use = evidence_answer_opening(item, language, intent)
+            use += ('相关实践包括'+linked+'。') if zh else (' My experience includes '+linked+'.')
         elif intent == 'introduction':
             use = ('我有'+linked+'的实践经历，希望把这些经验用于这个岗位。' if zh else
                    f'My background includes hands-on work in {linked}, which I would bring to this role.')

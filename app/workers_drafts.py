@@ -368,6 +368,8 @@ def supported(narrative, payload, trace=None):
     if len(ids) != len(set(ids)) or any(identifier not in available for identifier in ids):
         return invalid('evidence_ids')
     body = narrative.body
+    if '\uf09f' in body or '\ufffd' in body:
+        return invalid('unreadable_text')
     if unsafe_instruction(body) or re.search(
         r'[@<>]|https?://|到岗|出勤|附件|可实习|署名|'
         r'\b(?:availability|available to start|days per week|attached|sincerely)\b', body, re.I

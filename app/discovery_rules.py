@@ -5,9 +5,10 @@ from itertools import zip_longest
 
 from .discovery_models import MatchExtraction, SearchSuggestions, job_identity, normalized, term_matches
 from .policy import unsafe_instruction
+from .resumes import normalize_resume_bullets
 from .occupations import TECH, directions, duty_roles
 
-RULE_VERSION = 'discovery-7'
+RULE_VERSION = 'discovery-8'
 GRADES = ['夯', '顶级', '人上人', 'npc', '拉完了']
 SKILLS = (
     'Python', 'FastAPI', 'Flask', 'SQL', 'RAG', 'Agent', '工具调用', '工作流', '检索', '模型 API',
@@ -37,9 +38,9 @@ def evidence_index(text):
     implementation_label = re.compile(r'^(?:项目实施|实施(?:过程|步骤|内容|成果)|项目工作内容|implementation)(?:$|\s*[:：])', re.I)
     stack_label = re.compile(r'^(?:项目技术栈|技术栈|tech(?:nology)? stack)(?:$|\s*[:：])', re.I)
     evidence = []
-    for number, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip(' \t#-*')
-        if not line or re.search(r'@|\b1[3-9]\d{9}\b|联系方式|住址', line) or unsafe_instruction(line):
+    for number, raw in enumerate(normalize_resume_bullets(text).splitlines(), 1):
+        line = raw.strip(' \t#-*•▪●')
+        if not line or '\ufffd' in line or '\uf09f' in line or re.search(r'@|\b1[3-9]\d{9}\b|联系方式|住址', line) or unsafe_instruction(line):
             continue
         heading = next(((label, pattern) for label,pattern in headings
                         if re.match(r'^(?:'+pattern+r')(?:$|\s*[:：｜|]|\s+[–—-]\s+)', line, re.I)), None)

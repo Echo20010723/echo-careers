@@ -452,6 +452,17 @@ footer details { margin: 0; }
 .discovery-statement[hidden], .discovery-statement [hidden] { display: none; }
 .discovery-statement :is(input, textarea, select) { max-width: 100%; }
 .discovery-statement > button { justify-self: start; }
+.statement-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block: 8px; }
+.statement-editor-heading label { margin: 0; }
+.statement-editor-heading button { min-height: 44px; }
+.discovery-statement .statement-length { margin-block: 4px; }
+.draft-basis { margin-block: 10px 4px; }
+.draft-basis ul { padding-inline-start: 1.25em; }
+.draft-basis li + li { margin-block-start: 10px; }
+.draft-basis p { margin-block: 3px; overflow-wrap: anywhere; }
+.draft-requirement { font-weight: 600; }
+.statement-options label { margin-block-start: 8px; }
+
 
 /* The home page uses the same palette as the workbench. */
 body:has(#discovery.active:not(.workspace-open)) > .shell {

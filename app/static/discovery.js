@@ -283,10 +283,8 @@
     } else {
       onlineOption.textContent = 'Himalayas 在线岗位 · 规则决策';
     }
-    const mode = info.agent_provider === 'cloudflare' ? 'Cloudflare Workers AI · 在线岗位 Agent 已配置'
-      : info.model_mode === 'mock' ? '演示模式 · 无需模型密钥' : (info.model_configured === false || info.simulated_model)
-      ? '模型未配置 · 服务端需设置 OPENAI_API_KEY，在线 Agent 会使用规则降级' : '真实模型模式 · 岗位 Agent 有独立预算';
-    banner.textContent = mode + (info.public ? ' ｜公开体验 · 访客数据独立，重启或休眠后可能清空。投递由你决定。' : '');
+    banner.hidden = !info.public;
+    banner.textContent = info.public ? '公开体验 · 访客数据独立，重启后可能清空。' : '';
   }).catch(() => {});
 
   get('discovery-back').onclick = () => {
@@ -423,7 +421,6 @@
       get('occupation-suggestions').hidden = !roles.childElementCount;
       get('discovery-settings').hidden = false;
       profile.textContent = '';
-      get('workspace-analysis-mode').textContent = evaluationNames[result.mode] || '本地规则';
       get('discovery-terms-hint').textContent = result.needs_input ? '简历证据不足以生成三个职位词，可编辑或补填。' : '可调整建议，去重后最多五个。';
       const summary = get('discovery-summary');
       summary.replaceChildren();
@@ -994,7 +991,6 @@
       notes.append(el('summary','岗位与匹配明细'));
       detail.append(notes);
     }
-    notes.append(el('p',evaluationNames[analysis.evaluation_mode],'muted'));
     const groups = [
       ['硬条件核对', analysis.conditions.map(item=>item.name+' · '+item.status+(item.evidence?' · '+item.evidence:''))],
       ['最相关简历证据', analysis.evidence.map(item=>'第 '+item.line+' 行 · '+item.quote)],
@@ -1066,44 +1062,28 @@
     }
   }
 
-  function draftTraceText(draft) {
-    const trace = draft.generation;
-    if (!trace) return '';
-    const source = {fresh:'新模型响应',cache_hit:'历史缓存',coalesced:'共享同一次模型请求',
-      fallback:'本地草稿',preview:'基础预览'}[trace.source];
-    const model = trace.response_model ? '上游响应 '+trace.response_model :
-      (trace.attempted ? '尝试 '+trace.configured_model : '');
-    return [source,model,trace.duration_ms == null ? '' : trace.duration_ms+' ms',
-      trace.request_id ? '请求 '+trace.request_id : ''].filter(Boolean).join(' · ');
+  function renderDraftEvidence(container, evidence) {
+    const shownRequirements = new Set();
+    const groups = evidence.map(item => {
+      const row = el('li');
+      const requirement = item.requirement?.trim();
+      if (requirement && !shownRequirements.has(requirement)) {
+        row.append(el('p',requirement,'draft-requirement'));
+        shownRequirements.add(requirement);
+      }
+      const line = el('p','简历第 '+item.line+' 行 · '+(item.quote || item.topics.join('、')));
+      row.append(line);
+      return row;
+    });
+    container.replaceChildren(...groups);
   }
 
-  function draftEvidenceText(item) {
-    const lead = '简历第 '+item.line+' 行'+(item.transferable ? '（可迁移）' : '');
-    return lead+' · '+(item.quote || item.topics.join('、'))+(item.requirement ? ' ｜ 对应岗位要求 · '+item.requirement : '');
+  function draftStatus(draft) {
+    if (draft.missing_facts?.length) {
+      return draft.mode === '待补充' ? '' : '请补充'+draft.missing_facts.join('、')+'。';
+    }
+    return draft.fallback_reason && draft.mode !== '待补充' ? '已提供参考草稿，可编辑或重新生成。' : '';
   }
-
-  const draftReasons = {
-    not_configured:'Workers AI 尚未配置，可编辑基础草稿。',
-    no_evidence:'缺少匹配证据，可补充简历或手动修改。',
-    question_needs_input:'这个问题需要你提供具体或已确认的信息，可手动补充。',
-    app_daily_limit:'本站今日生成次数已达上限，可继续编辑，或在 UTC 零点后重新生成。',
-    app_hourly_limit:'当前会话的小时上限已到，可继续编辑，稍后再重新生成。',
-    upstream_quota:'Cloudflare 免费额度已用完，可继续编辑，或等 Cloudflare 额度重置。',
-    upstream_limit:'Cloudflare 暂时限流，请稍后再重新生成。',
-    busy:'生成服务正忙，可继续编辑，稍后再试。',
-    timeout:'Workers AI 响应超时，可使用基础草稿或重新生成。',
-    provider_error:'Workers AI 暂不可用，可继续编辑基础草稿。',
-    invalid_output:'模型正文或证据引用未通过校验，可继续编辑基础草稿。',
-  };
-
-  const statementValidationReasons = {
-    output_truncated:'模型输出被截断', output_json:'模型正文无法解析', output_schema:'模型正文格式不完整',
-    response_shape:'上游响应格式异常', completion_stopped:'上游提前结束',
-    evidence_ids:'模型引用了本次未提供或重复的证据', missing_evidence_topic:'正文与所引证据未能对应',
-    unsupported_number:'模型写入了简历无法核对的数字', unsupported_responsibility:'模型扩大了候选人的职责',
-    unsupported_outcome:'模型写入了简历无法核对的成果', unsupported_tool:'模型写入了简历无法核对的工具',
-    length_limit:'模型超出了所填长度限制', language:'模型输出语言不符',
-  };
 
   function applicationAnchor(job) {
     try {
@@ -1154,25 +1134,29 @@
     const limitCaption = el('span');
     const limitLabel = label('',limit);
     limitLabel.prepend(limitCaption);
+    const optionsDetails = el('details',undefined,'statement-options');
+    optionsDetails.append(el('summary','更多选项'),limitLabel);
     const status = el('p',undefined,'muted');
     status.setAttribute('role','status');
     const output = el('div',undefined,'discovery-mail-editor');
     const body = el('textarea');
     body.rows = 8;
-    const stats = el('p',undefined,'muted');
-    const basis = el('p',undefined,'muted');
-    const stateLabel = el('p',undefined,'muted');
-    const traceLabel = el('p',undefined,'muted');
+    const stats = el('p',undefined,'muted statement-length');
+    const basis = el('details',undefined,'draft-basis');
+    const evidenceRows = el('ul');
+    basis.append(el('summary','查看撰写依据'),evidenceRows);
     const submit = el('button','生成陈述');
     submit.type = 'submit';
     const copy = el('button','复制陈述','secondary');
     const apply = el('button','采用新草稿','secondary');
     copy.type = apply.type = 'button';
-    const controls = el('div',undefined,'actions');
-    controls.append(copy,apply);
-    const facts = el('p',undefined,'muted');
-    output.append(stateLabel,traceLabel,label('申请陈述',body),stats,basis,facts,controls);
-    form.append(label('语言',language),label('招聘方问题（选填）',question),limitLabel,submit,status,output);
+    const editorHeading = el('div',undefined,'statement-editor-heading');
+    const caption = el('label','申请陈述');
+    body.id = 'statement-'+crypto.randomUUID();
+    caption.htmlFor = body.id;
+    editorHeading.append(caption,copy);
+    output.append(editorHeading,body,stats,apply,basis);
+    form.append(label('语言',language),label('招聘方问题（选填）',question),optionsDetails,submit,status,output);
     panel.append(el('h4','投递方式'),actions,form);
     const slots = new Map();
     const inputsByLanguage = new Map();
@@ -1194,17 +1178,17 @@
       status.textContent = slot?.status || '';
       if (!available) return;
       if (body.value !== slot.body) body.value = slot.body;
-      stateLabel.textContent = slot.edited ? '已编辑' : slot.draft.mode;
-      traceLabel.textContent = draftTraceText(slot.draft);
       const size = count(slot.body);
       const max = options().limit;
-      stats.textContent = size+(language.value === 'zh' ? ' 字符' : ' 词')+
-        (max ? ' / '+max+(size > max ? ' · 超过填写的限制' : '') : '');
-      const evidence = slot.draft.evidence.map(draftEvidenceText);
-      const duties = slot.draft.duties.map(terms => terms.join('、'));
-      basis.textContent = [duties.length ? '岗位职责 · '+duties.join('；') : '', ...evidence].filter(Boolean).join(' ｜ ');
-      facts.textContent = slot.draft.missing_facts?.length ? '待补充 · '+slot.draft.missing_facts.join('、') : '';
-      facts.hidden = !facts.textContent;
+      stats.hidden = !max;
+      stats.textContent = max ? size+' / '+max+(language.value === 'zh' ? ' 字符' : ' 词')+
+        (size > max ? ' · 超过上限' : '') : '';
+      const evidence = slot.draft.evidence || [];
+      basis.hidden = !evidence.length;
+      if (evidenceRows.currentEvidence !== evidence) {
+        renderDraftEvidence(evidenceRows,evidence);
+        evidenceRows.currentEvidence = evidence;
+      }
       apply.hidden = !slot.proposal;
     }
     toggle.onclick = () => {
@@ -1256,7 +1240,7 @@
       const sameResume = () => resumeId === selectedResume && resumeVersion === selectedVersion;
       const show = () => { if (sameResume() && key() === chosen) render(); };
       slots.set(chosen,slot);
-      Object.assign(slot,{pending:true,proposal:null,status:'正在准备申请陈述…'});
+      Object.assign(slot,{pending:true,proposal:null,status:'正在生成…'});
       show();
       try {
         if (!refresh) {
@@ -1264,17 +1248,14 @@
           if (!sameResume()) return;
           replace(slot,preview);
         }
-        slot.status = '参考答复已就绪，可编辑或复制。正在生成模型稿。';
+        slot.status = '正在生成…';
         show();
         const draft = await postDraft(refresh ?
           {...request,regeneration_id:crypto.randomUUID()} : request);
         if (!sameResume()) return;
         if (!slot.edited) replace(slot,draft);
         else if (!draft.fallback_reason) slot.proposal = draft;
-        const validation = statementValidationReasons[draft.generation?.validation];
-        slot.status = draft.fallback_reason ? (validation ? validation+'，已保留可编辑的参考答复。' :
-          draftReasons[draft.fallback_reason] || '可编辑基础草稿。')
-          : slot.edited ? '新草稿待采用，当前编辑已保留。'+draftTraceText(draft) : '申请陈述已就绪。';
+        slot.status = slot.proposal ? '新草稿可采用，当前编辑已保留。' : draftStatus(draft);
       } catch (problem) { slot.status = problem.message; }
       finally { slot.pending = false; show(); }
     };
@@ -1340,10 +1321,9 @@
     signatureLabel.append(signature);
     const editor = el('div', undefined, 'discovery-mail-editor');
     let modified = false, active = false, proposal = null;
-    const mode = el('p',undefined,'muted');
-    const traceLabel = el('p',undefined,'muted');
-    const draftDetails = el('details');
-    draftDetails.append(el('summary','草稿依据与生成详情'));
+    const draftDetails = el('details',undefined,'draft-basis');
+    const draftRows = el('ul');
+    draftDetails.append(el('summary','查看撰写依据'),draftRows);
     const subject = el('input');
     const subjectLabel = el('label','主题');
     subjectLabel.append(subject);
@@ -1364,24 +1344,20 @@
         '?subject='+encodeURIComponent(subject.value)+'&body='+encodeURIComponent(body.value);
       client.setAttribute('aria-disabled',String(!valid));
     };
-    const reasons = draftReasons;
     function fill(draft) {
       modified = false;
-      mode.textContent = draft.mode;
-      traceLabel.textContent = draftTraceText(draft);
       subject.value = draft.subject;
       body.value = draft.answer;
       guidance.replaceChildren(el('p','建议附件名 · '+draft.attachment_name),
         el('p','发送前请附上简历，核对收件人和附件要求。'));
-      const detailLines = (draft.evidence || []).map(item=>el('p',draftEvidenceText(item)));
-      draftDetails.replaceChildren(draftDetails.firstElementChild,traceLabel,...detailLines);
-      if (job.source !== 'offerdao') guidance.append(...detailLines);
+      const evidence = draft.evidence || [];
+      renderDraftEvidence(draftRows,evidence);
+      draftDetails.hidden = !evidence.length;
       for (const hint of draft.guidance) guidance.append(el('p',hint));
       updateLink();
     }
     for (const field of [subject,body]) field.addEventListener('input',() => {
       modified = true;
-      mode.textContent = '已编辑';
       updateLink();
     });
     recipient.addEventListener('input',updateLink);
@@ -1411,18 +1387,15 @@
       compose.disabled = regenerate.disabled = true;
       proposal = null;
       apply.hidden = true;
-      status.textContent = '正在准备邮件…';
+      status.textContent = '正在生成…';
       try {
         if (!editor.childElementCount) {
           const preview = await postDraft({...inputs,preview:true});
           if (!stillCurrent()) return;
           fill(preview);
-          editor.append(mode,subjectLabel,bodyLabel,controls,guidance);
-          if (job.source === 'offerdao') editor.append(draftDetails);
-          else editor.prepend(traceLabel);
+          editor.append(subjectLabel,bodyLabel,controls,guidance,draftDetails);
           signatureLabel.hidden = true;
         }
-        status.textContent = '正在生成正文。现在可以编辑或复制基础草稿。';
         const draft = await postDraft(refresh ?
           {...inputs,regeneration_id:crypto.randomUUID()} : inputs);
         if (!stillCurrent()) return;
@@ -1432,9 +1405,7 @@
         } else if (!modified) {
           fill(draft);
         }
-        status.textContent = draft.fallback_reason
-          ? reasons[draft.fallback_reason] || '可继续编辑基础草稿。'
-          : modified ? '新草稿待采用，当前编辑已保留。' : '模型草稿已就绪。';
+        status.textContent = proposal ? '新草稿可采用，当前编辑已保留。' : draftStatus(draft);
       } catch (problem) { if (stillCurrent()) status.textContent = problem.message; }
       finally {
         active = false;

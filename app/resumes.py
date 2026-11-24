@@ -13,6 +13,12 @@ PDF_SECTION_HEADING = re.compile(
 )
 
 
+def normalize_resume_bullets(text):
+    # U+F09F is the list glyph extracted from the Word/Wingdings resume PDF.
+    # Only map it at a confirmed item boundary, without changing source line numbers.
+    return re.sub(r'(?m)^([ \t]*)\uf09f(?=[ \t]+\S)', r'\1•', text)
+
+
 def _pdf_page_text(page):
     plain = page.extract_text() or ''
     lines = [line.strip() for line in plain.splitlines() if line.strip()]
@@ -47,7 +53,7 @@ def read_resume(name,content):
         if suffix=='.pdf':
             reader=PdfReader(io.BytesIO(content))
             if len(reader.pages)>50: raise AppError('INPUT_TOO_LARGE')
-            text='\n'.join(_pdf_page_text(page) for page in reader.pages)
+            text=normalize_resume_bullets('\n'.join(_pdf_page_text(page) for page in reader.pages))
             if len(re.sub(r'\s','',text))<30: raise AppError('PDF_NO_TEXT')
         elif suffix in {'.txt','.md'}: text=content.decode('utf-8-sig')
         else: raise AppError('INVALID_INPUT')

@@ -28,10 +28,11 @@ ENGINEERING = (
     ('数据质量验证', 'data quality checks', r'数据质量|data quality'),
     ('服务部署', 'service deployment', r'部署|deploy'),
     ('Jenkins', 'Jenkins', r'\bJenkins\b'),
-    ('CI/CD', 'CI/CD', r'CI\s*/\s*CD|CI/CD|持续集成|持续交付|持续部署'),
+    ('VictoriaMetrics', 'VictoriaMetrics', r'\bVictoriaMetrics\b'),
+    ('CI/CD', 'CI/CD', r'CI\s*/\s*CD|持续集成|持续交付|持续部署|自动化(?:构建|发布)|automated (?:builds?|releases?)'),
     ('Shell', 'Shell', r'\b(?:shell|bash)\b'),
     ('安装自动化', 'installation automation', r'安装.{0,10}自动化|自动化.{0,10}安装|installation scripts?|automat\w* .{0,20}install'),
-    ('故障巡检', 'system monitoring', r'监控|巡检|系统日志|\bmonitoring\b|system logs'),
+    ('故障巡检', 'system monitoring', r'监控|巡检|可观测性|系统日志|\bmonitoring\b|observability|system logs'),
     ('Ansible', 'Ansible', r'\bAnsible\b|ansibale'),
     ('Dockerfile', 'Dockerfile', r'\bDockerfile\b|Dockerﬁle'),
     ('Harbor', 'Harbor', r'\bHarbor\b'),
@@ -49,7 +50,7 @@ ENGINEERING = (
     ('数据处理', 'data processing', r'数据处理|数据清洗|data processing|data cleaning'),
 )
 ACTION = re.compile(
-    r'梳理|调研|主持|制定|分析|设计|实现|开发|构建|搭建|编写|验证|测试|部署|负责|参与|完成|巡检|维护|排查|监控|处理|'
+    r'梳理|调研|主持|制定|分析|设计|实现|开发|建设|构建|搭建|编写|验证|测试|部署|负责|参与|完成|巡检|维护|排查|监控|处理|'
     r'\b(?:built|developed|implemented|designed|tested|wrote|analy[sz]ed|conducted|prioriti[sz]ed|'
     r'deployed|validated|contributed|participated|maintained|monitored|operated|troubleshot)\b', re.I,
 )
@@ -85,6 +86,37 @@ def job_context(job):
     return sections
 
 
+def statement_evidence_index(text):
+    """Rejoin adjacent PDF wraps while keeping the starting resume line number."""
+    raw = text.splitlines()
+    items = iter(evidence_index(text))
+    current = next(items, None)
+    bullet = re.compile(r'^\s*(?:[-*•▪●#]|[0-9]{1,2}[.)、．]|[一二三四五六七八九十]+、)')
+    while current:
+        first = current.copy()
+        end = first['line']
+        quote = raw[end-1].strip(' \t#-*')
+        current = next(items, None)
+        while (current and current['line'] == end+1 and end-first['line'] < 2
+               and current['category'] == first['category']
+               and not bullet.match(raw[end])
+               and not re.search(r'[。！？.!?；;]$', quote)
+               and len(quote) < 260):
+            continuation = raw[end].strip()
+            if len(quote)+len(continuation) > 280:
+                break
+            quote += ('' if re.search(r'[\u3400-\u9fff]$', quote) and
+                      re.match(r'[\u3400-\u9fff]', continuation) else ' ')+continuation
+            end = current['line']
+            current = next(items, None)
+        if len(quote) > 280:
+            complete = re.findall(r'^.{12,279}[。！？.!?；;](?=\s|[\u3400-\u9fff]|$)', quote[:281])
+            if not complete:
+                continue
+            quote = complete[0]
+        yield {**first, 'quote':quote}
+
+
 def select_evidence(job, resume, *, language=None, question_topics=(), allow_transferable=False, sections=None):
     jd = job.jd or job.jd_summary or job.description or ''
     title = job.title or ''
@@ -102,14 +134,14 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
     role = 'product' if product_title or len(product.intersection(target)) >= 2 and not engineering.intersection(target) else 'engineering'
     preferred = product if role == 'product' else engineering | set(skill_hits(focus))
     scored, transferable = [], []
-    for item in evidence_index(resume['text']):
+    for item in (statement_evidence_index(resume['text']) if allow_transferable else evidence_index(resume['text'])):
         line = item['quote']
         if item['category'] in {'求职方向','教育','技能','认证'} or not ACTION.search(line) or NEGATION.search(line):
             continue
         terms = topics(line, language)
         overlap = set(terms).intersection(target)
         emphasis = set(terms).intersection(preferred)
-        if not (overlap or (allow_transferable and emphasis)) or role == 'product' and not emphasis:
+        if not (overlap or (allow_transferable and (emphasis or set(terms).intersection(question_topics)))) or role == 'product' and not emphasis:
             continue
         terms = sorted((term for term in terms if term in overlap or term in emphasis),
                        key=lambda term: (term not in question_topics, term not in overlap))[:6]
@@ -123,7 +155,7 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
         if re.search(r'验证|测试|tested|validated', line, re.I):
             verbs.append('verification')
         score = 4*len(overlap) + 3*len(emphasis) + int(item['category'] != '其他')
-        score += 5*len(set(terms).intersection(question_topics))
+        score += 12*len(set(terms).intersection(question_topics))
         excerpt = safe_excerpt(line)
         if not excerpt:
             continue
@@ -134,7 +166,9 @@ def select_evidence(job, resume, *, language=None, question_topics=(), allow_tra
     selected = []
     seen = set()
     ranked = sorted(scored, key=lambda row: (-row[0], row[1]))
-    if not ranked or allow_transferable:
+    if allow_transferable and question_topics:
+        ranked = sorted(scored+transferable, key=lambda row: (-row[0], row[1]))
+    elif not ranked or allow_transferable:
         ranked.extend(sorted(transferable, key=lambda row: (-row[0], row[1])))
     for _, number, terms, verbs, excerpt, requirement in ranked:
         if set(terms) <= seen:
@@ -213,7 +247,12 @@ def evidence_paragraphs(evidence, language, *, precise=False):
         elif requirement and not language_matches(requirement):
             requirement = ('、' if language == 'zh' else ', ').join(topics(requirement,language))
         if language == 'zh':
-            first = (quote if quote.startswith('我') else '我曾'+quote) if language_matches(quote) else '我的实际工作涉及'+'、'.join(item['topics'])
+            if precise and language_matches(quote):
+                first = quote if quote.startswith('我') else '我的相关经历包括：'+quote
+                if re.match(r'^(?:负责|参与|维护|使用|通过|部署|编写|开发|搭建|构建|建设|实现|管理|处理|排查|配置|完成)', quote):
+                    first = '我'+quote
+            else:
+                first = (quote if quote.startswith('我') else '我曾'+quote) if language_matches(quote) else '我的实际工作涉及'+'、'.join(item['topics'])
             fit = '这与岗位要求的「'+requirement+'」直接相关。' if requirement and index == 0 else ''
             paragraphs.append(first+'。'+fit)
         else:
@@ -258,7 +297,8 @@ QUESTION_INTENTS = (
     ('motivation', r'为什么(?:想|选择|选|申请|投递|应聘)|为何(?:选择|选|申请|应聘)|兴趣|动机|motiv|interest|attract|why (?:this|do you want|did you (?:choose|apply))'),
     ('strengths_and_growth', r'优缺点|优劣势|(?:优点|优势).{0,18}(?:缺点|不足|短板)|strengths?.{0,35}weakness|pros and cons'),
     ('growth', r'缺点|不足|短板|需要改进|weakness|areas? (?:for improvement|to improve)'),
-    ('strengths', r'优点|强项|最擅长|strength|what are you good at'),
+    ('strengths', r'优势|优点|强项|擅长|长处|看家本领|strength|what (?:are you good at|do you do best)|strongest skill'),
+    ('takeover', r'接手|最有把握|上手最快|take ownership|hit the ground running|take on first'),
     ('approach', r'(?:你会|该怎么|会如何|如何|怎么|怎样).{0,12}(?:排查|处理|设计|解决|验证)|how would you|what would you do'),
     ('challenge', r'挑战|调试|故障|如何解决|challeng|debug|troubleshoot|how did you solve'),
     ('collaboration', r'协作|合作|团队|collaborat|teamwork|worked with'),
@@ -277,7 +317,7 @@ QUESTION_FACTS = (
 
 
 def question_focus(question, language):
-    # Known questions use canonical intents. Only open questions need a redacted question excerpt.
+    # Intent shapes the local answer. The model receives the redacted evidence question separately.
     if unsafe_instruction(question):
         return 'manual', [], []
     question = safe_excerpt(question)
@@ -329,6 +369,32 @@ def statement_duties(sections, language, role, question_topics):
     return unique
 
 
+def evidence_answer_opening(item, language, intent):
+    """Describe a capability from the selected evidence, without upgrading responsibility."""
+    terms = set(item['topics'])
+    zh = language == 'zh'
+    if terms.intersection({'Jenkins','CI/CD','Shell','安装自动化','installation automation'}):
+        skill = '把重复的发布或安装操作整理成可复用流程' if zh else 'turning repeated release or installation steps into reusable workflows'
+        plan = '先检查现有发布流程，再核对部署后服务状态' if zh else 'review the release workflow and verify service status after deployment'
+        work = '发布流水线与部署核验' if zh else 'release pipelines and deployment verification'
+    elif terms.intersection({'问题调试','debugging','故障巡检','system monitoring','VictoriaMetrics'}):
+        skill = '用监控指标和日志定位问题' if zh else 'using monitoring data and logs to investigate problems'
+        plan = '先用日志和监控指标缩小故障范围，再逐项验证可疑环节' if zh else 'narrow the incident with logs and metrics, then verify the likely causes'
+        work = '系统监控与故障排查' if zh else 'monitoring and incident investigation'
+    else:
+        work = ('和' if zh else ' and ').join(item['topics'][:2])
+        skill = '把'+work+'用于具体任务' if zh else 'applying '+work+' to concrete tasks'
+        plan = '先核对'+work+'相关需求，再确定验证步骤' if zh else 'identify the requirements for '+work+' and define how to verify them'
+    if intent == 'approach':
+        return ('我会'+plan+'。以下经历可以作为这套做法的参考。') if zh else f'I would {plan}. My past work provides a starting point.'
+    if intent == 'takeover':
+        lead = ('我最有把握接手'+work+'相关工作。') if zh else f'The work I am best prepared to take on is {work}.'
+        if item.get('transferable'):
+            lead = ('我能先协助'+work+'相关工作。') if zh else f'I could start by supporting {work}.'
+        return lead
+    return ('我的优势是'+skill+'。') if zh else f'My strength is {skill}.'
+
+
 def statement_fallback(language, intent, duties, evidence, limit, gap):
     zh = language == 'zh'
     if intent in {'manual','eligibility'} or not evidence:
@@ -340,6 +406,8 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
 
     if limit is None:
         paragraphs = evidence_paragraphs(evidence, language, precise=True)
+        if intent in {'strengths','strengths_and_growth','takeover','approach'}:
+            paragraphs = [paragraph.split('这与岗位要求的「',1)[0].split(' This experience relates to the role requirement:',1)[0] for paragraph in paragraphs]
         if len(paragraphs) > 1:
             paragraphs[1] = ('另一段相关经历是：' if zh else 'A second relevant example: ') + paragraphs[1]
         main = ' '.join(paragraphs)
@@ -349,13 +417,18 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
         if not direct:
             fit = ('这些是我能带到新岗位的可迁移经验，具体职责仍需要逐项核对。' if zh else
                    'This is transferable experience that I can bring to the role, with its specific requirements still to verify.')
+        if intent in {'strengths','strengths_and_growth','takeover','approach'}:
+            opener = evidence_answer_opening(evidence[0], language, intent)
+            main = opener+'\n\n'+main
+        if intent == 'strengths' or intent == 'takeover' or intent == 'approach':
+            return main
         if intent in {'strengths_and_growth','growth'}:
             growth = (f'需要补强的方向可以结合岗位进一步确认。就现有经历而言，{gap}仍需要提供具体案例。' if gap else
                       '需要补强的方向还需要本人确认，再补上一例真实的改进过程。') if zh else (
                       f'One area to substantiate is {gap}. I would add a concrete example before claiming proficiency.' if gap else
                       'I would add one genuine area for improvement and a concrete example of how I am addressing it.')
             return growth if intent == 'growth' else main+'\n\n'+growth
-        if intent in {'open_question','approach'}:
+        if intent == 'open_question':
             return main+'\n\n'+('请结合招聘方的问题补充过程或个人判断。' if zh else
                                  'Add the detail or personal judgment requested by the question.')
         if intent in {'challenge','collaboration','experience'}:
@@ -385,7 +458,9 @@ def statement_fallback(language, intent, duties, evidence, limit, gap):
         linked = conjunction.join(chosen[:2])
         use = ('我曾参与'+linked+'，这段经历可用于岗位相关工作。' if zh else
                f'My work on {linked} is relevant to the responsibilities of this role.')
-        if intent == 'introduction':
+        if intent in {'strengths','strengths_and_growth','takeover','approach'}:
+            use = evidence_answer_opening(item, language, intent)
+        elif intent == 'introduction':
             use = ('我有'+linked+'的实践经历，希望把这些经验用于这个岗位。' if zh else
                    f'My background includes hands-on work in {linked}, which I would bring to this role.')
         elif intent == 'motivation' and zh:
@@ -429,8 +504,14 @@ def assemble_statement(job, data, resume, workers, settings):
                 if term.casefold() not in resume_skills), None)
     if intent in {'strengths_and_growth', 'growth'}:
         payload['possible_evidence_gap'] = gap
-    if intent in {'open_question','approach'} and not requested_facts:
-        payload['recruiter_question'] = safe_excerpt(options.question.strip())
+    if intent not in {'manual','eligibility'} and options.question.strip():
+        question = safe_excerpt(options.question.strip())
+        parts = re.split(r'[，。！？；?;]|\b(?:and|also)\b', question, flags=re.I) if requested_facts else [question]
+        evidence_parts = [part.strip() for part in parts if not any(re.search(row[3],part,re.I) for row in requested_facts)]
+        # Resume employers and contacts are not required in the question supplied to the model.
+        excerpt = re.sub(r'\b(?:at|for) (?:[A-Z][a-z]+ )(?:[A-Z][a-z]+ ?)+', '', '；'.join(evidence_parts))
+        if excerpt:
+            payload['recruiter_question'] = excerpt
     if len(evidence) == 1 and payload['length_target']:
         payload['length_target'] = [105, 160] if language == 'zh' else [75, 105]
     if options.limit is not None:

@@ -1071,7 +1071,8 @@
     if (!trace) return '';
     const source = {fresh:'新模型响应',cache_hit:'历史缓存',coalesced:'共享同一次模型请求',
       fallback:'本地草稿',preview:'基础预览'}[trace.source];
-    const model = trace.response_model || (draft.mode === 'Workers AI 草稿' ? trace.configured_model : '');
+    const model = trace.response_model ? '上游响应 '+trace.response_model :
+      (trace.attempted ? '尝试 '+trace.configured_model : '');
     return [source,model,trace.duration_ms == null ? '' : trace.duration_ms+' ms',
       trace.request_id ? '请求 '+trace.request_id : ''].filter(Boolean).join(' · ');
   }
@@ -1093,6 +1094,15 @@
     timeout:'Workers AI 响应超时，可使用基础草稿或重新生成。',
     provider_error:'Workers AI 暂不可用，可继续编辑基础草稿。',
     invalid_output:'模型正文或证据引用未通过校验，可继续编辑基础草稿。',
+  };
+
+  const statementValidationReasons = {
+    output_truncated:'模型输出被截断', output_json:'模型正文无法解析', output_schema:'模型正文格式不完整',
+    response_shape:'上游响应格式异常', completion_stopped:'上游提前结束',
+    evidence_ids:'模型引用了本次未提供或重复的证据', missing_evidence_topic:'正文与所引证据未能对应',
+    unsupported_number:'模型写入了简历无法核对的数字', unsupported_responsibility:'模型扩大了候选人的职责',
+    unsupported_outcome:'模型写入了简历无法核对的成果', unsupported_tool:'模型写入了简历无法核对的工具',
+    length_limit:'模型超出了所填长度限制', language:'模型输出语言不符',
   };
 
   function applicationAnchor(job) {
@@ -1261,7 +1271,9 @@
         if (!sameResume()) return;
         if (!slot.edited) replace(slot,draft);
         else if (!draft.fallback_reason) slot.proposal = draft;
-        slot.status = draft.fallback_reason ? draftReasons[draft.fallback_reason] || '可编辑基础草稿。'
+        const validation = statementValidationReasons[draft.generation?.validation];
+        slot.status = draft.fallback_reason ? (validation ? validation+'，已保留可编辑的参考答复。' :
+          draftReasons[draft.fallback_reason] || '可编辑基础草稿。')
           : slot.edited ? '新草稿待采用，当前编辑已保留。'+draftTraceText(draft) : '申请陈述已就绪。';
       } catch (problem) { slot.status = problem.message; }
       finally { slot.pending = false; show(); }

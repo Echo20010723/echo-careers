@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -216,6 +217,13 @@ def create_app(settings=None, *, _public_scope=False, _offerdao=None, _workers_d
                 duration_ms=trace['duration_ms'], status=result['mode'], source=trace['source'],
                 model=trace.get('response_model') or trace['configured_model'],
                 error_code=trace.get('validation') or result.get('fallback_reason'), http_status=trace.get('http_status'))
+            if data.statement and not data.preview:
+                logging.getLogger('uvicorn.error').info(
+                    'statement_draft request_id=%s source=%s model=%s http_status=%s finish_reason=%s validation=%s fallback=%s duration_ms=%s',
+                    trace['request_id'], trace['source'], trace.get('response_model') or trace['configured_model'],
+                    trace.get('http_status'), trace.get('finish_reason'), trace.get('validation'),
+                    result.get('fallback_reason'), trace['duration_ms'],
+                )
         return result
 
     @app.post('/api/discovery/drafts/{draft_id}/approve')

@@ -9,7 +9,7 @@ from threading import Lock
 from time import monotonic
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .policy import unsafe_instruction
 from .discovery_rules import skill_hits
@@ -266,14 +266,26 @@ class WorkersDrafts:
                 if all(type(n) is int and n >= 0 for n in counts):
                     usage = counts
             choice = envelope['choices'][0]
-            if choice.get('finish_reason') not in {None, 'stop', 'length'}:
+            completion = choice.get('finish_reason')
+            if upstream is not None:
+                upstream['finish_reason'] = completion if completion in {'stop','length','content_filter','tool_calls'} else 'unknown'
+            if completion not in {None, 'stop', 'length'}:
+                if upstream is not None:
+                    upstream['validation'] = 'completion_stopped'
                 return (None, 'invalid_output'), usage
             content = choice['message']['content']
             if schema is Narrative and isinstance(content, str):
                 fenced = re.fullmatch(r'\s*\x60{3}(?:json)?\s*(\{.*\})\s*\x60{3}\s*', content, re.S | re.I)
                 if fenced:
                     content = fenced[1]
-            result = schema.model_validate_json(content)
+            try:
+                result = schema.model_validate_json(content)
+            except ValidationError as problem:
+                errors = {item['type'] for item in problem.errors(include_input=False)}
+                if upstream is not None:
+                    upstream['validation'] = ('output_truncated' if completion == 'length' else
+                                              'output_json' if 'json_invalid' in errors else 'output_schema')
+                return (None, 'invalid_output'), usage
             if schema is Narrative:
                 if payload.get('kind') == 'statement':
                     result = verified_statement(result, payload, upstream)
@@ -299,6 +311,8 @@ class WorkersDrafts:
                 self.last_http_error = {'transport':causes}
             return (None, 'provider_error'), usage
         except (ValueError, KeyError, TypeError, IndexError, AttributeError, RecursionError):
+            if upstream is not None:
+                upstream.setdefault('validation', 'response_shape')
             return (None, 'invalid_output'), usage
 
 
@@ -368,13 +382,17 @@ def supported(narrative, payload, trace=None):
         return invalid('unsupported_number')
     if re.search(OUTCOME_CLAIM, body, re.I) and not re.search(OUTCOME_CLAIM, cited_quotes, re.I):
         return invalid('unsupported_outcome')
+    if payload.get('kind') == 'statement':
+        ownership = r'主导|牵头|全权(?:负责|管理)|独立(?:完成|负责|搭建|开发)|\b(?:led|headed|solely owned)\b'
+        if re.search(ownership, body, re.I) and not re.search(ownership, cited_quotes, re.I):
+            return invalid('unsupported_responsibility')
     # A detail present only in a vacancy can describe the role, not past experience.
     prior_work = re.compile(r'做过|负责过|维护过|曾|过往|此前|我(?:使用|用|实现|开发|维护|参与|管理)|'
                             r'\bI (?:have |previously )?(?:built|developed|used|maintained|deployed|managed|worked|implemented)\b', re.I)
     for sentence in re.split(r'[。；;\n]+|[.!?](?=\s)', body):
         if not prior_work.search(sentence):
             continue
-        tools = skill_hits(sentence) + re.findall(r'\b(?:Jenkins|Ansible|Terraform|Kubernetes|Shell|Bash|CI/CD|Dockerfile|Harbor|Prometheus|Grafana|Loki|PromQL|Filebeat|Zabbix)\b', sentence,re.I)
+        tools = skill_hits(sentence) + re.findall(r'\b(?:Jenkins|Ansible|Terraform|Kubernetes|VictoriaMetrics|Shell|Bash|CI/CD|Dockerfile|Harbor|Prometheus|Grafana|Loki|PromQL|Filebeat|Zabbix)\b', sentence,re.I)
         if any(tool.casefold() not in cited_quotes.casefold() for tool in tools):
             return invalid('unsupported_tool')
     if re.search(r'^(?:Dear\b|Hi\b|Hello\b|您好|尊敬|Best regards|Regards\b|此致|敬礼)|'
@@ -397,6 +415,11 @@ def supported(narrative, payload, trace=None):
     is_chinese = bool(re.search(r'[\u3400-\u9fff]',body))
     if is_chinese != (payload['language'] == 'zh'):
         return invalid('language')
-    if not all(any(topic.casefold() in body.casefold() for topic in available[identifier]) for identifier in ids):
+    matches = {topic for identifier in ids for topic in available[identifier] if topic.casefold() in body.casefold()}
+    if payload.get('kind') == 'statement':
+        # The same canonical labels are used for evidence retrieval in both languages.
+        from .application_draft import topics
+        matches.update(topics(body, payload['language']))
+    if not all(matches.intersection(available[identifier]) for identifier in ids):
         return invalid('missing_evidence_topic')
     return True

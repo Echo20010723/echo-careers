@@ -517,3 +517,71 @@ def test_motivation_answers_exact_question_before_model_and_on_timeout(tmp_path,
         assert json.loads(calls[0][0]['messages'][1]['content'])['question_intent']=='motivation'
         draft(client,rid,ENGINEERING)
         assert calls[-1][0]['model']=='@cf/qwen/qwen3.8-27b'
+
+
+QA_RESUME = """## 工作经历
+负责建设 Kubernetes 集群监控架构。通过引入 VictoriaMetrics 作为时序数据库，结合自研版
+本的采集组件汇总集群指标，配置故障告警。
+维护 Jenkins 流水线，使用 Shell 将服务安装步骤脚本化，并检查部署后的服务状态。
+参与 Linux 线上故障排查，通过应用日志和监控指标缩小故障范围。
+"""
+QA_JOB = {'source':'himalayas','title':'DevOps Engineer','jd':(
+    'Responsibilities\nMaintain Kubernetes observability and VictoriaMetrics alerts.\n'
+    'Maintain Jenkins CI/CD pipelines and verify services after deployment.\n'
+    'Investigate Linux incidents using logs and metrics.')}
+
+
+def test_open_questions_use_distinct_fallbacks_and_rejoin_pdf_wraps(tmp_path):
+    with TestClient(create_app(Settings(data_dir=tmp_path))) as client:
+        rid = upload(client,QA_RESUME)
+        def answer(question, language='zh', resume=rid):
+            return draft(client,resume,QA_JOB,statement={'question':question,'language':language})
+        for wording in ('你觉得你的优势是什么','你的看家本领是什么？',
+                        '你的优势是什么，最快何时到岗？'):
+            result = answer(wording)
+            assert result['answer'].startswith('我的优势是') and 'Jenkins' in result['answer']
+            assert '我曾Kubernetes' not in result['answer']
+        assert result['missing_facts']==['到岗日期']
+        takeover = answer('这份工作里，你最有把握接手哪部分？')
+        assert takeover['answer'].startswith('我最有把握接手')
+        future = answer('如果入职，你会怎么排查 Linux 服务异常？')
+        assert future['answer'].startswith('我会先用日志和监控指标')
+        assert '参与 Linux 线上故障排查' in future['evidence'][0]['quote']
+        monitoring = answer('谈谈你做过的 Kubernetes 集群监控，具体承担了什么？')
+        assert '结合自研版本的采集组件' in monitoring['evidence'][0]['quote']
+        english = answer('What is your strongest skill?', 'en')
+        assert english['answer'].startswith('My strength is') and 'Jenkins' in english['answer']
+        changed = upload(client,'## 工作经历\n参与 Linux 故障排查，通过监控指标检查服务。')
+        assert 'Jenkins' not in answer('你觉得你的优势是什么',resume=changed)['answer']
+
+
+@pytest.mark.parametrize('kind,expected', [
+    ('paraphrase',None), ('unknown_id','evidence_ids'), ('fabrication','unsupported_number'),
+    ('ownership','unsupported_responsibility'), ('truncated','output_truncated'), ('malformed','output_json'),
+])
+def test_statement_accepts_grounded_paraphrase_and_reports_distinct_rejections(tmp_path,monkeypatch,kind,expected):
+    from app.workers_drafts import WorkersDrafts
+
+    def worker(request):
+        payload = json.loads(json.loads(request.content)['messages'][1]['content'])
+        assert payload['recruiter_question']=='你觉得你的优势是什么'
+        assert payload['limit'] is None
+        # No term is copied verbatim from this evidence. 自动化发布 maps back to CI/CD.
+        body='我的优势是把自动化发布流程做得可复用。我曾维护发布流程并检查上线后的服务状态。'
+        if kind=='fabrication':
+            body+='我让故障减少了82%。'
+        if kind=='ownership':
+            body+='我主导了整个项目。'
+        content=json.dumps({'body':body,'evidence_ids':['E9' if kind=='unknown_id' else 'E1']})
+        if kind in {'truncated','malformed'}:
+            content=content[:20]
+        return httpx.Response(200,json={'choices':[{'finish_reason':'length' if kind=='truncated' else 'stop',
+                                                    'message':{'content':content}}]})
+
+    monkeypatch.setattr(WorkersDrafts,'transport',httpx.MockTransport(worker))
+    with TestClient(create_app(configured(tmp_path))) as client:
+        rid=upload(client,'## 工作经历\n维护 CI/CD 流水线并检查上线后服务状态。')
+        result=draft(client,rid,QA_JOB,statement={'language':'zh','question':'你觉得你的优势是什么'})
+        assert result['generation'].get('validation')==expected
+        assert result['mode']==('基础草稿' if expected else 'Workers AI 草稿')
+        assert '82%' not in result['answer'] and '我主导' not in result['answer']
